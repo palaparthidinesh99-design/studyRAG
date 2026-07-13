@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudyRAG — AI Retrieval-Augmented Study Companion</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Main Style Sheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Background blur spots for glowing ambient effect -->
+    <div class="glow-bg">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <!-- MAIN APP CONTAINER -->
+    <div id="app">
+        <!-- AUTH LAYER (Login / Register) -->
+        <div id="auth-layer" class="active">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <div class="logo">
+                        <i class="fa-solid fa-brain-circuit"></i>
+                        <span>Study<span>RAG</span></span>
+                    </div>
+                    <p class="subtitle">Your AI-powered context-grounded study engine</p>
+                </div>
+
+                <div class="auth-tabs">
+                    <button class="auth-tab active" onclick="switchAuthTab('login')">Log In</button>
+                    <button class="auth-tab" onclick="switchAuthTab('register')">Sign Up</button>
+                </div>
+
+                <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+                    <div class="input-group">
+                        <label for="auth-email">Email Address</label>
+                        <div class="input-wrapper">
+                            <i class="fa-regular fa-envelope"></i>
+                            <input type="email" id="auth-email" required placeholder="name@domain.com">
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="auth-password">Password</label>
+                        <div class="input-wrapper">
+                            <i class="fa-regular fa-lock"></i>
+                            <input type="password" id="auth-password" required placeholder="••••••••">
+                        </div>
+                    </div>
+
+                    <div id="auth-error" class="alert error hidden"></div>
+                    <div id="auth-success" class="alert success hidden"></div>
+
+                    <button type="submit" id="auth-submit-btn" class="btn primary full-width">
+                        <span>Continue</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- DASHBOARD LAYER -->
+        <div id="dashboard-layer" class="hidden">
+            <!-- SIDEBAR -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <div class="logo">
+                        <i class="fa-solid fa-brain-circuit"></i>
+                        <span>Study<span>RAG</span></span>
+                    </div>
+                </div>
+
+                <!-- Subjects list -->
+                <div class="sidebar-nav">
+                    <div class="nav-section-title">
+                        <span>YOUR SUBJECTS</span>
+                        <button class="btn-icon-small" onclick="openSubjectModal()" title="Add Subject">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                    </div>
+                    <ul id="subjects-list" class="nav-list">
+                        <!-- Dynamically populated -->
+                        <li class="loading-placeholder">Loading subjects...</li>
+                    </ul>
+                </div>
+
+                <!-- User profile & Logout -->
+                <div class="sidebar-footer">
+                    <div class="user-info">
+                        <div class="user-avatar">
+                            <i class="fa-solid fa-user-graduate"></i>
+                        </div>
+                        <div class="user-details">
+                            <span class="user-name">Graduate Student</span>
+                            <span id="user-email-display" class="user-email">email@domain.com</span>
+                        </div>
+                    </div>
+                    <button class="btn-logout" onclick="handleLogout()" title="Log Out">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </div>
+            </aside>
+
+            <!-- MAIN CONTENT AREA -->
+            <main class="main-content">
+                <!-- ACTIVE SUBJECT VIEW -->
+                <div id="subject-active-view" class="hidden">
+                    <header class="content-header">
+                        <div class="subject-info">
+                            <h1 id="active-subject-name">Subject Title</h1>
+                            <div class="subject-stats">
+                                <span id="stat-books"><i class="fa-solid fa-book"></i> 0 Books Linked</span>
+                                <span id="stat-sources"><i class="fa-solid fa-file-pdf"></i> 0 Sources Uploaded</span>
+                            </div>
+                        </div>
+
+                        <!-- Panel toggles -->
+                        <div class="panel-toggles">
+                            <button id="tab-btn-chat" class="tab-btn active" onclick="switchMainTab('chat')">
+                                <i class="fa-regular fa-comment-dots"></i> Chat Console
+                            </button>
+                            <button id="tab-btn-sources" class="tab-btn" onclick="switchMainTab('sources')">
+                                <i class="fa-regular fa-folder-open"></i> Study Materials
+                            </button>
+                        </div>
+                    </header>
+
+                    <!-- CHAT CONSOLE PANEL -->
+                    <div id="panel-chat" class="panel active">
+                        <div class="chat-wrapper">
+                            <!-- Messages Feed -->
+                            <div id="chat-feed" class="chat-feed">
+                                <div class="welcome-chat-message">
+                                    <div class="welcome-icon">
+                                        <i class="fa-solid fa-feather-pointed"></i>
+                                    </div>
+                                    <h3>Ask Your Context-Grounded Question</h3>
+                                    <p>I will search your uploaded notes and linked global textbooks to generate a formatted, cited answer.</p>
+                                    <div class="chat-quick-tags">
+                                        <span>Ground-truth retrieval</span>
+                                        <span>No audio hallucination</span>
+                                        <span>Page-level citations</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Input Console -->
+                            <div class="chat-input-area">
+                                <div id="ocr-preview-container" class="hidden">
+                                    <div class="ocr-preview">
+                                        <i class="fa-regular fa-image"></i>
+                                        <span id="ocr-preview-filename">image.jpg</span>
+                                        <button class="btn-remove-preview" onclick="cancelOcrUpload()">
+                                            <i class="fa-solid fa-xmark"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <form id="chat-input-form" onsubmit="handleQuerySubmit(event)">
+                                    <!-- Photo query button -->
+                                    <button type="button" class="btn-input-action" onclick="triggerOcrSelect()" title="Ask with Photo (OCR)">
+                                        <i class="fa-regular fa-camera"></i>
+                                    </button>
+                                    <input type="file" id="ocr-file-input" class="hidden" accept="image/*" onchange="handleOcrSelect(event)">
+
+                                    <input type="text" id="chat-input" placeholder="Ask a question about this subject..." autocomplete="off" required>
+
+                                    <button type="submit" class="btn-send" title="Send Question">
+                                        <i class="fa-solid fa-paper-plane"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- History Sidebar -->
+                        <aside class="chat-history-sidebar">
+                            <div class="history-header">
+                                <i class="fa-solid fa-clock-rotate-left"></i>
+                                <span>Recent Queries</span>
+                            </div>
+                            <ul id="history-list" class="history-list">
+                                <!-- Dynamically populated -->
+                                <li class="history-placeholder">No query history yet</li>
+                            </ul>
+                        </aside>
+                    </div>
+
+                    <!-- STUDY MATERIALS PANEL -->
+                    <div id="panel-sources" class="panel">
+                        <div class="sources-grid">
+                            <!-- Linked & Global Textbooks -->
+                            <div class="materials-card">
+                                <h3><i class="fa-solid fa-globe"></i> Global Study Reference Texts</h3>
+                                <p class="section-desc">Attach textbooks to ground your questions in verified curriculum literature.</p>
+                                <ul id="global-books-list" class="global-books-list">
+                                    <!-- Dynamically populated -->
+                                    <li class="loading-placeholder">Loading textbook catalogue...</li>
+                                </ul>
+                            </div>
+
+                            <!-- Private Notes & Uploader -->
+                            <div class="materials-card">
+                                <h3><i class="fa-solid fa-user-lock"></i> Personal Notes & Uploads</h3>
+                                <p class="section-desc font-small">Ingest your lecture whiteboard photos, slides, or handwritten PDF study notes.</p>
+
+                                <!-- Drag and Drop File Dropzone -->
+                                <div id="dropzone" class="file-dropzone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave()" ondrop="handleDrop(event)" onclick="triggerSourceSelect()">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                                    <p class="dropzone-title">Drag & drop files here</p>
+                                    <p class="dropzone-subtitle">Supports PDF notes or classroom photos (PNG, JPG, WEBP)</p>
+                                    <input type="file" id="source-file-input" class="hidden" accept="application/pdf,image/*" onchange="handleSourceSelect(event)">
+                                </div>
+
+                                <!-- Ingestion Progress Bar -->
+                                <div id="upload-progress-container" class="upload-progress-container hidden">
+                                    <div class="progress-bar-header">
+                                        <span id="upload-progress-filename">note.pdf</span>
+                                        <span id="upload-progress-percent">0%</span>
+                                    </div>
+                                    <div class="progress-track">
+                                        <div id="progress-fill" class="progress-fill"></div>
+                                    </div>
+                                    <p id="upload-status-text" class="progress-status-text">Uploading raw bytes...</p>
+                                </div>
+
+                                <ul id="personal-sources-list" class="personal-sources-list">
+                                    <!-- Dynamically populated -->
+                                    <li class="sources-placeholder">No private notes uploaded yet</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EMPTY STATE VIEW -->
+                <div id="subject-empty-view" class="empty-state-view">
+                    <div class="empty-card">
+                        <div class="glowing-logo">
+                            <i class="fa-solid fa-brain-circuit"></i>
+                        </div>
+                        <h2>Welcome to StudyRAG</h2>
+                        <p>Select an academic subject from the sidebar, or create a new one to link global textbooks and upload classroom note photos.</p>
+                        <button class="btn primary" onclick="openSubjectModal()">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>Create Your First Subject</span>
+                        </button>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- SUBJECT CREATION MODAL -->
+    <div id="subject-modal" class="modal-layer hidden">
+        <div class="modal-backdrop" onclick="closeSubjectModal()"></div>
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Create New Subject</h3>
+                <button class="btn-close-modal" onclick="closeSubjectModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="create-subject-form" onsubmit="handleCreateSubject(event)">
+                <div class="input-group">
+                    <label for="new-subject-name">Subject Name</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-signature"></i>
+                        <input type="text" id="new-subject-name" required placeholder="e.g. Ancient Greek Philosophy">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn secondary" onclick="closeSubjectModal()">Cancel</button>
+                    <button type="submit" class="btn primary">
+                        <span>Create Subject</span>
+                        <i class="fa-solid fa-circle-check"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- APP SCRIPT -->
+    <script src="app.js"></script>
+</body>
+</html>

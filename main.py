@@ -3,7 +3,9 @@ import uuid
 import io
 import requests
 import base64
+import re
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -16,6 +18,14 @@ from book_processor import split_into_subchunks
 load_dotenv()
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
@@ -45,6 +55,10 @@ class CreateSubjectRequest(BaseModel):
 
 class QueryTextRequest(BaseModel):
     query: str
+
+class SaveNoteRequest(BaseModel):
+    title: str
+    content: str
 
 @app.post("/register")
 def register(req: RegisterRequest):
@@ -312,6 +326,45 @@ def query_text(
     req: QueryTextRequest,
     user_id: str = Depends(get_current_user)
 ):
+    # Check if subject exists and belongs to user
+    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    if not subject.data:
+        raise HTTPException(status_code=404, detail="Subject not found or access denied")
+
+    # Detect greetings and simple friendly queries
+    greeting_pattern = re.compile(
+        r"^(hello|hi|hey|greetings|howdy|how are you|thanks|thank you|good morning|good afternoon|good evening)\b", 
+        re.IGNORECASE
+    )
+    if greeting_pattern.match(req.query.strip()):
+        try:
+            res = call_ollama("generate", {
+                "model": "gpt-oss:20b-cloud",
+                "prompt": f"You are a helpful, friendly AI study assistant. Respond to this friendly greeting/pleasantry concisely and warmly:\n{req.query}",
+                "stream": False
+            })
+            answer = res.json()["response"].strip()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
+            
+        # Log greeting query to DB
+        try:
+            supabase.table("queries").insert({
+                "subject_id": subject_id,
+                "input_type": "text",
+                "extracted_text": req.query,
+                "generated_answer": answer,
+                "sections_used": []
+            }).execute()
+        except Exception as e:
+            print(f"Failed to log query to DB: {e}")
+            
+        return {
+            "query": req.query,
+            "answer": answer,
+            "sources": []
+        }
+
     # 1. Retrieve merged context
     retrieved = retrieve_merged_context(subject_id, req.query, user_id)
     
@@ -346,8 +399,9 @@ def query_text(
     context = "\n\n---\n\n".join(context_parts)
     
     # 3. Call LLM (gpt-oss:20b-cloud)
-    prompt = f"""Use ONLY the following context to answer the question.
-Cite which source and section your answer comes from. Make clear, formatted notes.
+    prompt = f"""Use ONLY the following context to answer the question. 
+Structure your answer beautifully using markdown headers (##), bold terms, list items, and tables where applicable to make it highly structured and easy to read.
+Cite which source and section your answer comes from.
 
 Context:
 {context}
@@ -533,6 +587,241 @@ def list_subject_sources(
         return result.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch sources: {str(e)}")
+
+
+@app.get("/subjects/{subject_id}/books")
+def list_subject_books(
+    subject_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    # Confirm subject belongs to user
+    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    if not subject.data:
+        raise HTTPException(status_code=404, detail="Subject not found or access denied")
+        
+    try:
+        # Fetch the linked global books
+        result = supabase.table("subject_books").select("global_book_id").eq("subject_id", subject_id).execute()
+        return [item["global_book_id"] for item in result.data]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch linked books: {str(e)}")
+
+
+@app.post("/subjects/{subject_id}/saved-notes")
+def save_chat_note(
+    subject_id: str,
+    req: SaveNoteRequest,
+    user_id: str = Depends(get_current_user)
+):
+    # 1. Confirm subject belongs to user
+    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    if not subject.data:
+        raise HTTPException(status_code=404, detail="Subject not found or access denied")
+        
+    collection_name = subject.data[0]["chroma_collection_name"]
+    
+    # 2. Upload note content as a markdown file to Supabase Storage
+    note_content_bytes = req.content.encode("utf-8")
+    storage_path = f"{user_id}/{subject_id}/notes/{uuid.uuid4().hex}.md"
+    try:
+        supabase.storage.from_("user-uploads").upload(
+            path=storage_path,
+            file=note_content_bytes,
+            file_options={"content-type": "text/markdown"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload note to Storage: {str(e)}")
+        
+    # 3. Create the database record in 'sources' table
+    try:
+        source_insert = supabase.table("sources").insert({
+            "subject_id": subject_id,
+            "source_type": "saved_note",
+            "title": req.title,
+            "storage_path": storage_path
+        }).execute()
+        source_data = source_insert.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create source record: {str(e)}")
+        
+    # 4. Chunk and Index in Chroma Collection
+    chunks = split_into_subchunks(req.content)
+    if chunks:
+        try:
+            collection = chroma_client.get_or_create_collection(name=collection_name)
+            ids = [f"source_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
+            metadatas = [
+                {
+                    "source_id": source_data["id"],
+                    "source_title": req.title,
+                    "chunk_index": i
+                }
+                for i in range(len(chunks))
+            ]
+            batch_size = 100
+            for i in range(0, len(chunks), batch_size):
+                collection.add(
+                    ids=ids[i:i+batch_size],
+                    documents=chunks[i:i+batch_size],
+                    metadatas=metadatas[i:i+batch_size]
+                )
+        except Exception as e:
+            print(f"Chroma DB indexing error for saved note: {e}")
+            
+    return {"message": "Note saved and indexed", "source": source_data}
+
+
+@app.post("/subjects/{subject_id}/generate-notes")
+async def generate_structured_notes(
+    subject_id: str,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user)
+):
+    # 1. Confirm subject belongs to user
+    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    if not subject.data:
+        raise HTTPException(status_code=404, detail="Subject not found or access denied")
+        
+    collection_name = subject.data[0]["chroma_collection_name"]
+    
+    file_content = await file.read()
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    
+    # 2. Extract raw text from file
+    raw_text = ""
+    if file_ext == ".pdf":
+        try:
+            pdf_file = io.BytesIO(file_content)
+            reader = PdfReader(pdf_file)
+            for page in reader.pages:
+                text = page.extract_text()
+                if text:
+                    raw_text += text + "\n"
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse PDF text: {str(e)}")
+    elif file_ext in [".png", ".jpg", ".jpeg", ".webp"]:
+        # Run OCR
+        try:
+            image_b64 = base64.b64encode(file_content).decode("utf-8")
+            payload = {
+                "model": "gemma4:31b-cloud",
+                "prompt": "Transcribe all text in this image exactly as written. Preserve paragraphs.",
+                "images": [image_b64],
+                "stream": False
+            }
+            res = call_ollama("generate", payload)
+            raw_text = res.json()["response"].strip()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"OCR transcription failed: {str(e)}")
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file format. Must be PDF or Image.")
+        
+    if not raw_text.strip():
+        raise HTTPException(status_code=400, detail="No readable text found in the uploaded file.")
+        
+    # 3. Call LLM to restructure notes (gpt-oss:20b-cloud)
+    prompt = f"""You are an expert tutor. Please reorganize, expand, and structure the following raw student notes into a highly comprehensive, detailed, and clean study guide.
+Use markdown headers (##), bold key concepts, lists, and tables where applicable to make it highly structured and readable.
+
+Raw Student Notes:
+{raw_text}
+
+Structured Study Guide:"""
+
+    try:
+        res = call_ollama("generate", {
+            "model": "gpt-oss:20b-cloud",
+            "prompt": prompt,
+            "stream": False
+        })
+        structured_notes = res.json()["response"].strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
+        
+    # 4. Upload structured markdown notes to Supabase Storage
+    note_content_bytes = structured_notes.encode("utf-8")
+    storage_path = f"{user_id}/{subject_id}/generated-notes/{uuid.uuid4().hex}.md"
+    title = f"AI Notes - {os.path.splitext(file.filename)[0]}"
+    try:
+        supabase.storage.from_("user-uploads").upload(
+            path=storage_path,
+            file=note_content_bytes,
+            file_options={"content-type": "text/markdown"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload structured notes to Storage: {str(e)}")
+        
+    # 5. Create database record in 'sources' table
+    try:
+        source_insert = supabase.table("sources").insert({
+            "subject_id": subject_id,
+            "source_type": "generated_note",
+            "title": title,
+            "storage_path": storage_path
+        }).execute()
+        source_data = source_insert.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save generated note record: {str(e)}")
+        
+    # 6. Index structured notes in Chroma DB
+    chunks = split_into_subchunks(structured_notes)
+    if chunks:
+        try:
+            collection = chroma_client.get_or_create_collection(name=collection_name)
+            ids = [f"source_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
+            metadatas = [
+                {
+                    "source_id": source_data["id"],
+                    "source_title": title,
+                    "chunk_index": i
+                }
+                for i in range(len(chunks))
+            ]
+            batch_size = 100
+            for i in range(0, len(chunks), batch_size):
+                collection.add(
+                    ids=ids[i:i+batch_size],
+                    documents=chunks[i:i+batch_size],
+                    metadatas=metadatas[i:i+batch_size]
+                )
+        except Exception as e:
+            print(f"Chroma DB indexing error for generated notes: {e}")
+            
+    return {
+        "title": title,
+        "content": structured_notes,
+        "source": source_data
+    }
+
+
+@app.get("/subjects/{subject_id}/sources/{source_id}/content")
+def get_source_content(
+    subject_id: str,
+    source_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    # Confirm subject belongs to user
+    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    if not subject.data:
+        raise HTTPException(status_code=404, detail="Subject not found or access denied")
+        
+    # Get source details
+    source = supabase.table("sources").select("*").eq("id", source_id).eq("subject_id", subject_id).execute()
+    if not source.data:
+        raise HTTPException(status_code=404, detail="Source not found")
+        
+    storage_path = source.data[0]["storage_path"]
+    
+    try:
+        # Download file content from Supabase Storage
+        file_bytes = supabase.storage.from_("user-uploads").download(storage_path)
+        # Attempt to decode as text
+        text_content = file_bytes.decode("utf-8")
+        return {"content": text_content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch content: {str(e)}")
+
+
 
 
 
