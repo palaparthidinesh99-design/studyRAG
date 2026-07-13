@@ -315,11 +315,11 @@ async function triggerOpenStaxSearch() {
     if (!query) return;
     
     const list = document.getElementById("global-books-list");
-    list.innerHTML = `<li class="sources-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Searching OpenStax textbooks database...</li>`;
+    list.innerHTML = `<li class="sources-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Searching OpenStax & arXiv global catalogue...</li>`;
     
     try {
-        const res = await fetch(`${BASE_URL}/openstax-books?query=${encodeURIComponent(query)}`);
-        if (!res.ok) throw new Error("Failed to search OpenStax catalog");
+        const res = await fetch(`${BASE_URL}/catalogue/search?query=${encodeURIComponent(query)}`);
+        if (!res.ok) throw new Error("Failed to search global catalog");
         
         state.globalBooks = await res.json();
         renderGlobalBooks();
@@ -333,7 +333,7 @@ function renderGlobalBooks() {
     list.innerHTML = "";
     
     if (state.globalBooks.length === 0) {
-        list.innerHTML = `<li class="sources-placeholder">No matching OpenStax textbooks found.</li>`;
+        list.innerHTML = `<li class="sources-placeholder">No matching textbooks or research papers found.</li>`;
         return;
     }
     
@@ -344,18 +344,21 @@ function renderGlobalBooks() {
         const isLinked = state.linkedBookIds.some(title => title.toLowerCase() === book.title.toLowerCase());
         const buttonHTML = isLinked 
             ? `<button class="btn-link linked" disabled>Linked ✓</button>`
-            : `<button class="btn-link" onclick="linkOpenStaxBook(this, '${escapeHTML(book.openstax_id)}', '${escapeHTML(book.title)}', '${escapeHTML(book.pdf_url)}')">Link Textbook</button>`;
+            : `<button class="btn-link" onclick="linkOpenStaxBook(this, '${escapeHTML(book.source_id)}', '${escapeHTML(book.title)}', '${escapeHTML(book.pdf_url)}', '${escapeHTML(book.source)}')">Link Material</button>`;
         
         const coverImg = book.cover_url 
             ? `<img src="${book.cover_url}" style="width: 48px; height: 64px; border-radius: 4px; object-fit: cover; border: 1px solid var(--border-color); flex-shrink:0;">`
-            : `<div style="width: 48px; height: 64px; border-radius: 4px; background: rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><i class="fa-solid fa-book" style="color:var(--text-muted);"></i></div>`;
+            : `<div style="width: 48px; height: 64px; border-radius: 4px; background: rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><i class="fa-solid ${book.source === 'arxiv' ? 'fa-file-pdf' : 'fa-book'}" style="color:var(--text-muted);"></i></div>`;
+            
+        const sourceLabel = book.source === 'arxiv' ? 'arXiv Engineering Paper' : 'OpenStax College Catalog';
+        const sourceBadgeClass = book.source === 'arxiv' ? 'badge-arxiv' : 'badge-openstax';
             
         li.innerHTML = `
             <div style="display:flex; gap:12px; align-items:center;">
                 ${coverImg}
                 <div>
                     <div class="book-title" title="${escapeHTML(book.title)}">${escapeHTML(book.title)}</div>
-                    <div class="book-author">OpenStax College Catalog</div>
+                    <div class="book-author"><span class="source-badge ${sourceBadgeClass}">${sourceLabel}</span></div>
                 </div>
             </div>
             ${buttonHTML}
@@ -364,24 +367,25 @@ function renderGlobalBooks() {
     });
 }
 
-async function linkOpenStaxBook(button, openstaxId, title, pdfUrl) {
+async function linkOpenStaxBook(button, sourceId, title, pdfUrl, source) {
     if (!state.activeSubjectId) return;
     
     button.disabled = true;
     button.textContent = "Linking...";
     
     try {
-        const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/books/openstax`, {
+        const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/books/global`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                openstax_id: openstaxId,
+                source_id: sourceId,
                 title: title,
-                pdf_url: pdfUrl
+                pdf_url: pdfUrl,
+                source: source
             })
         });
         
-        if (!res.ok) throw new Error("Could not link OpenStax textbook");
+        if (!res.ok) throw new Error("Could not link material");
         
         button.textContent = "Linked ✓";
         button.classList.add("linked");
@@ -392,7 +396,7 @@ async function linkOpenStaxBook(button, openstaxId, title, pdfUrl) {
     } catch (err) {
         alert(err.message);
         button.disabled = false;
-        button.textContent = "Link Textbook";
+        button.textContent = "Link Material";
     }
 }
 

@@ -60,10 +60,11 @@ class SaveNoteRequest(BaseModel):
     title: str
     content: str
 
-class LinkOpenStaxBookRequest(BaseModel):
-    openstax_id: str
+class LinkCatalogueBookRequest(BaseModel):
+    source_id: str
     title: str
     pdf_url: str
+    source: str
 
 @app.post("/register")
 def register(req: RegisterRequest):
@@ -335,6 +336,41 @@ def query_text(
     subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
+
+    # Fast intercept for simple greetings to skip slow RAG context retrieval
+    greeting_pattern = re.compile(
+        r"^(hi|hello|hey|greetings|howdy|what'?s up|how are you|thanks|thank you|good morning|good afternoon|good evening)\b", 
+        re.IGNORECASE
+    )
+    # Only intercept if it's mostly a greeting (short message)
+    if greeting_pattern.match(req.query.strip()) and len(req.query.strip()) < 40:
+        try:
+            prompt = f"You are a friendly AI study assistant. The user said: '{req.query}'. Respond warmly, simply, and concisely."
+            res = call_ollama("generate", {
+                "model": "gpt-oss:20b-cloud",
+                "prompt": prompt,
+                "stream": False
+            })
+            answer = res.json()["response"].strip()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
+            
+        try:
+            supabase.table("queries").insert({
+                "subject_id": subject_id,
+                "input_type": "text",
+                "extracted_text": req.query,
+                "generated_answer": answer,
+                "sections_used": []
+            }).execute()
+        except Exception:
+            pass
+            
+        return {
+            "query": req.query,
+            "answer": answer,
+            "sources": []
+        }
 
     # 1. Retrieve merged context
     retrieved = retrieve_merged_context(subject_id, req.query, user_id)
@@ -815,7 +851,7 @@ def fallback_process_pdf(pdf_path: str, book_title: str):
     return chunks
 
 
-def index_openstax_book_task(global_book_id: str, pdf_url: str, title: str, collection_name: str):
+def index_catalogue_book_task(global_book_id: str, pdf_url: str, title: str, collection_name: str):
     import requests
     import os
     os.makedirs("books", exist_ok=True)
@@ -871,35 +907,86 @@ def index_openstax_book_task(global_book_id: str, pdf_url: str, title: str, coll
             print(f"Chroma DB indexing error for OpenStax book: {e}")
 
 
-@app.get("/openstax-books")
-def search_openstax_books(query: str = ""):
+@app.get("/catalogue/search")
+def search_catalogue(query: str = ""):
     try:
-        url = f"https://openstax.org/apps/cms/api/v2/pages/?type=books.Book&limit=15"
-        if query:
-            url += f"&search={query}"
-        res = requests.get(url).json()
-        
         books = []
-        for item in res.get("items", []):
-            detail_url = item["meta"]["detail_url"]
-            detail = requests.get(detail_url).json()
-            
-            books.append({
-                "openstax_id": str(item["id"]),
-                "title": item["title"],
-                "pdf_url": detail.get("high_resolution_pdf_url"),
-                "cover_url": detail.get("cover_url"),
-                "description": detail.get("description", "")
-            })
+        q_lower = query.lower()
+        
+        # 1. Fetch OpenStax Books
+        try:
+            url = "https://openstax.org/apps/cms/api/v2/pages/?type=books.Book&limit=250"
+            res = requests.get(url).json()
+            matched_items = []
+            for item in res.get("items", []):
+                if not query or q_lower in item.get("title", "").lower():
+                    matched_items.append(item)
+                if len(matched_items) >= 10:
+                    break
+                    
+            for item in matched_items:
+                detail = requests.get(item["meta"]["detail_url"]).json()
+                books.append({
+                    "source_id": str(item["id"]),
+                    "title": item["title"],
+                    "pdf_url": detail.get("high_resolution_pdf_url"),
+                    "cover_url": detail.get("cover_url"),
+                    "description": detail.get("description", ""),
+                    "source": "openstax"
+                })
+        except Exception as e:
+            print(f"OpenStax search failed: {e}")
+
+        # 2. Fetch arXiv Papers
+        if query:
+            try:
+                import urllib.parse
+                import xml.etree.ElementTree as ET
+                safe_query = urllib.parse.quote(query)
+                arxiv_url = f"http://export.arxiv.org/api/query?search_query=all:{safe_query}&start=0&max_results=10"
+                arxiv_res = requests.get(arxiv_url).text
+                
+                root = ET.fromstring(arxiv_res)
+                ns = {"atom": "http://www.w3.org/2005/Atom"}
+                
+                for entry in root.findall("atom:entry", ns):
+                    title = entry.find("atom:title", ns).text.strip().replace("\\n", " ")
+                    summary = entry.find("atom:summary", ns).text.strip().replace("\\n", " ")
+                    pdf_url = None
+                    for link in entry.findall("atom:link", ns):
+                        if link.attrib.get("title") == "pdf":
+                            pdf_url = link.attrib.get("href")
+                            break
+                            
+                    if not pdf_url:
+                        id_elem = entry.find("atom:id", ns)
+                        if id_elem is not None:
+                            pdf_url = id_elem.text.replace("abs", "pdf")
+                            
+                    if pdf_url:
+                        pdf_url = pdf_url.replace("http://", "https://")
+                        source_id = pdf_url.split("/")[-1]
+                        
+                        books.append({
+                            "source_id": source_id,
+                            "title": title,
+                            "pdf_url": pdf_url,
+                            "cover_url": None,
+                            "description": summary,
+                            "source": "arxiv"
+                        })
+            except Exception as e:
+                print(f"arXiv search failed: {e}")
+                
         return books
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch OpenStax catalogue: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch global catalogue: {str(e)}")
 
 
-@app.post("/subjects/{subject_id}/books/openstax")
-def link_openstax_book(
+@app.post("/subjects/{subject_id}/books/global")
+def link_catalogue_book(
     subject_id: str,
-    req: LinkOpenStaxBookRequest,
+    req: LinkCatalogueBookRequest,
     background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user)
 ):
@@ -922,7 +1009,7 @@ def link_openstax_book(
             supabase.table("global_books").insert({
                 "id": book_id,
                 "title": req.title,
-                "source": "openstax",
+                "source": req.source,
                 "chroma_collection_name": collection_name
             }).execute()
         except Exception as e:
@@ -930,7 +1017,7 @@ def link_openstax_book(
             
         # Spawn background task to download and index
         background_tasks.add_task(
-            index_openstax_book_task,
+            index_catalogue_book_task,
             book_id,
             req.pdf_url,
             req.title,
@@ -948,7 +1035,7 @@ def link_openstax_book(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to link book to subject: {str(e)}")
             
-    return {"message": "OpenStax book linked successfully", "global_book_id": book_id}
+    return {"message": "Book linked successfully", "global_book_id": book_id}
 
 
 

@@ -197,23 +197,22 @@
                         <!-- Upper Catalog Section -->
                         <div class="catalog-section">
                             <div class="catalog-card">
-                                <h3><i class="fa-solid fa-globe"></i> OpenStax Global Textbook Reference Catalogue</h3>
-                                <p class="section-desc">Search and link any book in the entire OpenStax catalog to ground your chatbot queries.</p>
+                                <h3><i class="fa-solid fa-globe"></i> Global Textbook & Research Catalogue</h3>
+                                <p class="section-desc">Search and link OpenStax textbooks and arXiv engineering papers.</p>
                                 
-                                <!-- OpenStax search input -->
+                                <!-- Global catalogue search input -->
                                 <div class="openstax-search-bar-wrapper">
-                                    <div class="input-wrapper">
+                                    <div class="search-input-container">
                                         <i class="fa-solid fa-magnifying-glass"></i>
-                                        <input type="text" id="openstax-search-input" placeholder="Search textbooks (e.g. Physics, Chemistry, Biology)..." onkeyup="handleOpenStaxSearchKeyup(event)">
+                                        <input type="text" id="openstax-search-input" placeholder="Search topics (e.g. Machine Learning, Thermodynamics)..." onkeyup="handleOpenStaxSearchKeyup(event)">
                                     </div>
                                     <button class="btn primary" onclick="triggerOpenStaxSearch()">
-                                        <i class="fa-solid fa-magnifying-glass"></i> Search
+                                        <i class="fa-solid fa-search"></i> Search
                                     </button>
                                 </div>
-
-                                <ul id="global-books-list" class="global-books-list horizontal">
-                                    <!-- Dynamically populated -->
-                                    <li class="sources-placeholder">Type in the search bar above to search all books in the OpenStax catalog...</li>
+                                
+                                <ul id="global-books-list" class="materials-list custom-scroll" style="max-height: 250px;">
+                                    <li class="sources-placeholder">Type in the search bar above to search the global catalogue...</li>
                                 </ul>
                             </div>
                         </div>
