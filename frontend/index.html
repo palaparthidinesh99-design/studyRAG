@@ -194,45 +194,80 @@
 
                     <!-- STUDY MATERIALS PANEL -->
                     <div id="panel-sources" class="panel">
-                        <div class="sources-grid">
-                            <!-- Linked & Global Textbooks -->
-                            <div class="materials-card">
-                                <h3><i class="fa-solid fa-globe"></i> Global Study Reference Texts</h3>
-                                <p class="section-desc">Attach textbooks to ground your questions in verified curriculum literature.</p>
-                                <ul id="global-books-list" class="global-books-list">
+                        <!-- Upper Catalog Section -->
+                        <div class="catalog-section">
+                            <div class="catalog-card">
+                                <h3><i class="fa-solid fa-globe"></i> OpenStax Global Textbook Reference Catalogue</h3>
+                                <p class="section-desc">Ground your chatbot's search indexes in official syllabus textbooks by linking them below.</p>
+                                <ul id="global-books-list" class="global-books-list horizontal">
                                     <!-- Dynamically populated -->
                                     <li class="loading-placeholder">Loading textbook catalogue...</li>
                                 </ul>
                             </div>
+                        </div>
 
-                            <!-- Private Notes & Uploader -->
-                            <div class="materials-card">
-                                <h3><i class="fa-solid fa-user-lock"></i> Personal Notes & Uploads</h3>
-                                <p class="section-desc font-small">Ingest your lecture whiteboard photos, slides, or handwritten PDF study notes.</p>
+                        <div class="sources-grid two-part">
+                            <!-- PART A: RAG Reference Ingestor -->
+                            <div class="materials-card part-card">
+                                <div class="part-header">
+                                    <h3><i class="fa-solid fa-layer-group"></i> 1. RAG Search Reference Materials</h3>
+                                    <span class="part-badge bg-primary">Context Grounding</span>
+                                </div>
+                                <p class="section-desc font-small">Ingest slides, notes, or scanned whiteboard note photos of seniors. Chunks are embedded and indexed for chat searches.</p>
 
-                                <!-- Drag and Drop File Dropzone -->
-                                <div id="dropzone" class="file-dropzone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave()" ondrop="handleDrop(event)" onclick="triggerSourceSelect()">
+                                <div id="dropzone-ref" class="file-dropzone" ondragover="handleDragOver(event, 'ref')" ondragleave="handleDragLeave('ref')" ondrop="handleDrop(event, 'ref')" onclick="triggerSourceSelect('ref')">
                                     <i class="fa-solid fa-cloud-arrow-up"></i>
-                                    <p class="dropzone-title">Drag & drop files here</p>
-                                    <p class="dropzone-subtitle">Supports PDF notes or classroom photos (PNG, JPG, WEBP)</p>
-                                    <input type="file" id="source-file-input" class="hidden" accept="application/pdf,image/*" onchange="handleSourceSelect(event)">
+                                    <p class="dropzone-title">Upload RAG Sources</p>
+                                    <p class="dropzone-subtitle">PDF Notes or Whiteboard Photos (PNG, JPG, WEBP)</p>
+                                    <input type="file" id="ref-file-input" class="hidden" accept="application/pdf,image/*" onchange="handleSourceSelect(event, 'ref')">
                                 </div>
 
-                                <!-- Ingestion Progress Bar -->
-                                <div id="upload-progress-container" class="upload-progress-container hidden">
+                                <div id="progress-ref" class="upload-progress-container hidden">
                                     <div class="progress-bar-header">
-                                        <span id="upload-progress-filename">note.pdf</span>
-                                        <span id="upload-progress-percent">0%</span>
+                                        <span id="filename-ref">note.pdf</span>
+                                        <span id="percent-ref">0%</span>
                                     </div>
                                     <div class="progress-track">
-                                        <div id="progress-fill" class="progress-fill"></div>
+                                        <div id="fill-ref" class="progress-fill"></div>
                                     </div>
-                                    <p id="upload-status-text" class="progress-status-text">Uploading raw bytes...</p>
+                                    <p id="status-ref" class="progress-status-text">Uploading raw files...</p>
                                 </div>
 
-                                <ul id="personal-sources-list" class="personal-sources-list">
+                                <ul id="ref-sources-list" class="personal-sources-list">
                                     <!-- Dynamically populated -->
-                                    <li class="sources-placeholder">No private notes uploaded yet</li>
+                                    <li class="sources-placeholder">No reference sources uploaded yet</li>
+                                </ul>
+                            </div>
+
+                            <!-- PART B: AI Note Restructuring Generator -->
+                            <div class="materials-card part-card">
+                                <div class="part-header">
+                                    <h3><i class="fa-solid fa-sparkles"></i> 2. AI Note Restructuring Generator</h3>
+                                    <span class="part-badge bg-accent">AI Auto-Notes</span>
+                                </div>
+                                <p class="section-desc font-small">Upload your messy, disorganized whiteboard snaps or lecture slides. The AI will instantly rewrite them into beautiful, structured guides.</p>
+
+                                <div id="dropzone-gen" class="file-dropzone dropzone-accent" ondragover="handleDragOver(event, 'gen')" ondragleave="handleDragLeave('gen')" ondrop="handleDrop(event, 'gen')" onclick="triggerSourceSelect('gen')">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                    <p class="dropzone-title">Upload Messy Notes</p>
+                                    <p class="dropzone-subtitle">PDF Lecture Scans or Whiteboard Photos</p>
+                                    <input type="file" id="gen-file-input" class="hidden" accept="application/pdf,image/*" onchange="handleSourceSelect(event, 'gen')">
+                                </div>
+
+                                <div id="progress-gen" class="upload-progress-container hidden">
+                                    <div class="progress-bar-header">
+                                        <span id="filename-gen">messy_note.jpg</span>
+                                        <span id="percent-gen">0%</span>
+                                    </div>
+                                    <div class="progress-track">
+                                        <div id="fill-gen" class="progress-fill bg-accent-fill"></div>
+                                    </div>
+                                    <p id="status-gen" class="progress-status-text text-accent">Structuring your notes...</p>
+                                </div>
+
+                                <ul id="gen-sources-list" class="personal-sources-list">
+                                    <!-- Dynamically populated -->
+                                    <li class="sources-placeholder">No AI structured guides generated yet</li>
                                 </ul>
                             </div>
                         </div>
@@ -281,6 +316,29 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- STUDY NOTE DETAILS MODAL READER -->
+    <div id="reader-modal" class="modal-layer hidden">
+        <div class="modal-backdrop" onclick="closeReaderModal()"></div>
+        <div class="modal-card reader-card">
+            <div class="modal-header">
+                <h3 id="reader-title">AI Study Guide</h3>
+                <div class="reader-actions">
+                    <button class="btn-icon-small" onclick="copyReaderContent()" title="Copy to Clipboard">
+                        <i class="fa-regular fa-copy"></i>
+                    </button>
+                    <button class="btn-close-modal" onclick="closeReaderModal()">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="reader-body">
+                <div id="reader-content" class="reader-content">
+                    <!-- Note Markdown Content Renders Here -->
+                </div>
+            </div>
         </div>
     </div>
 

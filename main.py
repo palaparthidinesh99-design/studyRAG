@@ -4,7 +4,7 @@ import io
 import requests
 import base64
 import re
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -59,6 +59,11 @@ class QueryTextRequest(BaseModel):
 class SaveNoteRequest(BaseModel):
     title: str
     content: str
+
+class LinkOpenStaxBookRequest(BaseModel):
+    openstax_id: str
+    title: str
+    pdf_url: str
 
 @app.post("/register")
 def register(req: RegisterRequest):
@@ -820,6 +825,164 @@ def get_source_content(
         return {"content": text_content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch content: {str(e)}")
+
+
+def fallback_process_pdf(pdf_path: str, book_title: str):
+    from pypdf import PdfReader
+    reader = PdfReader(pdf_path)
+    chunks = []
+    for page_idx, page in enumerate(reader.pages):
+        text = page.extract_text()
+        if not text:
+            continue
+        subchunks = split_into_subchunks(text.strip())
+        for i, sub in enumerate(subchunks):
+            chunks.append({
+                "book": book_title,
+                "section_title": f"Page {page_idx + 1}",
+                "start_page": page_idx + 1,
+                "end_page": page_idx + 1,
+                "subchunk_index": i,
+                "text": sub
+            })
+    return chunks
+
+
+def index_openstax_book_task(global_book_id: str, pdf_url: str, title: str, collection_name: str):
+    import requests
+    import os
+    os.makedirs("books", exist_ok=True)
+    pdf_path = f"books/{global_book_id}.pdf"
+    
+    # 1. Download PDF
+    try:
+        response = requests.get(pdf_url, stream=True)
+        with open(pdf_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+    except Exception as e:
+        print(f"Failed to download OpenStax book {title}: {e}")
+        return
+        
+    # 2. Process PDF
+    try:
+        from book_processor import process_pdf
+        chunks = process_pdf(pdf_path, title)
+        if not chunks:
+            chunks = fallback_process_pdf(pdf_path, title)
+    except Exception as e:
+        print(f"Error parsing PDF outlines: {e}")
+        chunks = fallback_process_pdf(pdf_path, title)
+        
+    # 3. Index in Chroma DB
+    if chunks:
+        try:
+            collection = chroma_client.get_or_create_collection(name=collection_name)
+            ids = [f"book_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
+            metadatas = [
+                {
+                    "source_id": global_book_id,
+                    "source_title": title,
+                    "section_title": chunk["section_title"],
+                    "start_page": chunk["start_page"],
+                    "end_page": chunk["end_page"],
+                    "subchunk_index": chunk["subchunk_index"]
+                }
+                for chunk in chunks
+            ]
+            documents = [chunk["text"] for chunk in chunks]
+            
+            batch_size = 100
+            for i in range(0, len(documents), batch_size):
+                collection.add(
+                    ids=ids[i:i+batch_size],
+                    documents=documents[i:i+batch_size],
+                    metadatas=metadatas[i:i+batch_size]
+                )
+            print(f"Indexed OpenStax book {title} successfully: {len(chunks)} chunks.")
+        except Exception as e:
+            print(f"Chroma DB indexing error for OpenStax book: {e}")
+
+
+@app.get("/openstax-books")
+def search_openstax_books(query: str = ""):
+    try:
+        url = f"https://openstax.org/apps/cms/api/v2/pages/?type=books.Book&limit=15"
+        if query:
+            url += f"&search={query}"
+        res = requests.get(url).json()
+        
+        books = []
+        for item in res.get("items", []):
+            detail_url = item["meta"]["detail_url"]
+            detail = requests.get(detail_url).json()
+            
+            books.append({
+                "openstax_id": str(item["id"]),
+                "title": item["title"],
+                "pdf_url": detail.get("high_resolution_pdf_url"),
+                "cover_url": detail.get("cover_url"),
+                "description": detail.get("description", "")
+            })
+        return books
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch OpenStax catalogue: {str(e)}")
+
+
+@app.post("/subjects/{subject_id}/books/openstax")
+def link_openstax_book(
+    subject_id: str,
+    req: LinkOpenStaxBookRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user)
+):
+    # Confirm subject belongs to user
+    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    if not subject.data:
+        raise HTTPException(status_code=404, detail="Subject not found or access denied")
+        
+    # Check if this book is already in global_books
+    existing_book = supabase.table("global_books").select("*").eq("title", req.title).execute()
+    
+    if existing_book.data:
+        book_id = existing_book.data[0]["id"]
+    else:
+        # Create a new global book entry
+        book_id = str(uuid.uuid4())
+        collection_name = f"book_{uuid.uuid4().hex}"
+        
+        try:
+            supabase.table("global_books").insert({
+                "id": book_id,
+                "title": req.title,
+                "source": "openstax",
+                "chroma_collection_name": collection_name
+            }).execute()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to register global book: {str(e)}")
+            
+        # Spawn background task to download and index
+        background_tasks.add_task(
+            index_openstax_book_task,
+            book_id,
+            req.pdf_url,
+            req.title,
+            collection_name
+        )
+        
+    # Link it to the subject
+    linked = supabase.table("subject_books").select("*").eq("subject_id", subject_id).eq("global_book_id", book_id).execute()
+    if not linked.data:
+        try:
+            supabase.table("subject_books").insert({
+                "subject_id": subject_id,
+                "global_book_id": book_id
+            }).execute()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to link book to subject: {str(e)}")
+            
+    return {"message": "OpenStax book linked successfully", "global_book_id": book_id}
+
 
 
 

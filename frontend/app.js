@@ -12,6 +12,7 @@ let state = {
     subjects: [],
     activeSubjectId: null,
     globalBooks: [],
+    linkedBookIds: [],
     personalSources: [],
     activeTab: "chat", // "chat" | "sources"
     ocrFile: null
@@ -250,13 +251,18 @@ async function refreshSubjectData() {
     
     try {
         await Promise.all([
+            loadLinkedBooks(),
             loadPersonalSources(),
-            loadQueryHistory(),
-            loadGlobalCatalogue() // To update linking statuses
+            loadQueryHistory()
         ]);
         
         // Update Stats Counters
-        document.getElementById("stat-sources").innerHTML = `<i class="fa-solid fa-file-pdf"></i> ${state.personalSources.length} Sources Uploaded`;
+        const ragCount = state.personalSources.filter(s => s.source_type !== "generated_note").length;
+        document.getElementById("stat-sources").innerHTML = `<i class="fa-solid fa-file-pdf"></i> ${ragCount} Sources Uploaded`;
+        document.getElementById("stat-books").innerHTML = `<i class="fa-solid fa-book"></i> ${state.linkedBookIds.length} Books Linked`;
+        
+        // Render materials lists
+        renderPersonalSources();
     } catch (err) {
         console.error("Error refreshing active subject details:", err);
     }
@@ -279,19 +285,21 @@ function switchMainTab(tab) {
 // STUDY MATERIALS: PDF/IMAGE UPLOADS & GLOBAL BOOKS LINKING
 // ==========================================================================
 
+async function loadLinkedBooks() {
+    try {
+        const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/books`);
+        state.linkedBookIds = await res.json();
+        
+        renderGlobalBooks();
+    } catch (err) {
+        console.error("Failed to load linked books list", err);
+    }
+}
+
 async function loadGlobalCatalogue() {
     try {
         const res = await fetch(`${BASE_URL}/global-books`);
         state.globalBooks = await res.json();
-        
-        // If we have an active subject, check which books are linked
-        let linkedBookIds = [];
-        if (state.activeSubjectId) {
-            // Check linking status (We can scan global books linking table or deduce from API)
-            // For now, we will query linking statuses in the frontend by listing books linked
-            // (linked books are returned in books lists or verified via list global book linkages)
-            // To make this robust, we fetch and associate:
-        }
         
         renderGlobalBooks();
     } catch (err) {
@@ -304,7 +312,7 @@ function renderGlobalBooks() {
     list.innerHTML = "";
     
     if (state.globalBooks.length === 0) {
-        list.innerHTML = `<li class="sources-placeholder">No reference textbooks registered in database.</li>`;
+        list.innerHTML = `<li class="sources-placeholder">No reference textbooks registered.</li>`;
         return;
     }
     
@@ -312,12 +320,17 @@ function renderGlobalBooks() {
         const li = document.createElement("li");
         li.className = "book-card";
         
+        const isLinked = state.linkedBookIds.includes(book.id);
+        const buttonHTML = isLinked 
+            ? `<button class="btn-link linked" disabled>Linked ✓</button>`
+            : `<button class="btn-link" onclick="linkBook('${book.id}', this)">Link Textbook</button>`;
+        
         li.innerHTML = `
             <div>
                 <div class="book-title">${escapeHTML(book.title)}</div>
-                <div class="book-author">OpenStax Publisher • College Text</div>
+                <div class="book-author">OpenStax College Reference</div>
             </div>
-            <button class="btn-link" onclick="linkBook('${book.id}', this)">Link Textbook</button>
+            ${buttonHTML}
         `;
         list.appendChild(li);
     });
@@ -340,9 +353,8 @@ async function linkBook(bookId, button) {
         button.classList.add("linked");
         button.disabled = true;
         
-        // Update stats
-        const linkedCount = document.querySelectorAll(".btn-link.linked").length;
-        document.getElementById("stat-books").innerHTML = `<i class="fa-solid fa-book"></i> ${linkedCount} Books Linked`;
+        // Refresh subject stats
+        await refreshSubjectData();
     } catch (err) {
         alert(err.message);
         button.disabled = false;
@@ -354,85 +366,132 @@ async function loadPersonalSources() {
     try {
         const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/sources`);
         state.personalSources = await res.json();
-        renderPersonalSources();
     } catch (err) {
         console.error("Failed to load personal sources", err);
     }
 }
 
 function renderPersonalSources() {
-    const list = document.getElementById("personal-sources-list");
-    list.innerHTML = "";
+    // Render list for Part A: RAG Reference documents
+    const refList = document.getElementById("ref-sources-list");
+    refList.innerHTML = "";
     
-    if (state.personalSources.length === 0) {
-        list.innerHTML = `<li class="sources-placeholder">No private notes uploaded yet.</li>`;
-        return;
+    const refSources = state.personalSources.filter(s => s.source_type !== "generated_note");
+    if (refSources.length === 0) {
+        refList.innerHTML = `<li class="sources-placeholder">No reference notes uploaded yet.</li>`;
+    } else {
+        refSources.forEach(source => {
+            const li = document.createElement("li");
+            li.className = "source-item";
+            li.onclick = () => openSourceReader(source);
+            
+            const isPdf = source.source_type === "text_pdf";
+            const isSavedNote = source.source_type === "saved_note";
+            
+            let iconClass = "fa-solid fa-file-pdf pdf";
+            let badgeText = "PDF Doc";
+            
+            if (isSavedNote) {
+                iconClass = "fa-solid fa-bookmark note";
+                badgeText = "Saved Note";
+            } else if (!isPdf) {
+                iconClass = "fa-solid fa-image image";
+                badgeText = "Whiteboard";
+            }
+            
+            li.innerHTML = `
+                <div class="source-item-info">
+                    <i class="${iconClass}"></i>
+                    <span class="source-title-text" title="${escapeHTML(source.title)}">${escapeHTML(source.title)}</span>
+                </div>
+                <span class="source-badge">${badgeText}</span>
+            `;
+            refList.appendChild(li);
+        });
     }
     
-    state.personalSources.forEach(source => {
-        const li = document.createElement("li");
-        li.className = "source-item";
-        
-        const isPdf = source.source_type === "text_pdf";
-        const iconClass = isPdf ? "fa-solid fa-file-pdf pdf" : "fa-solid fa-image image";
-        const badgeText = isPdf ? "PDF Note" : "Photo OCR";
-        
-        li.innerHTML = `
-            <div class="source-item-info">
-                <i class="${iconClass}"></i>
-                <span class="source-title-text" title="${escapeHTML(source.title)}">${escapeHTML(source.title)}</span>
-            </div>
-            <span class="source-badge">${badgeText}</span>
-        `;
-        list.appendChild(li);
-    });
+    // Render list for Part B: AI Structured Study Guides
+    const genList = document.getElementById("gen-sources-list");
+    genList.innerHTML = "";
+    
+    const genSources = state.personalSources.filter(s => s.source_type === "generated_note");
+    if (genSources.length === 0) {
+        genList.innerHTML = `<li class="sources-placeholder">No structured notes generated yet.</li>`;
+    } else {
+        genSources.forEach(source => {
+            const li = document.createElement("li");
+            li.className = "source-item";
+            li.onclick = () => openSourceReader(source);
+            
+            li.innerHTML = `
+                <div class="source-item-info">
+                    <i class="fa-solid fa-robot note"></i>
+                    <span class="source-title-text" title="${escapeHTML(source.title)}">${escapeHTML(source.title)}</span>
+                </div>
+                <span class="source-badge">AI Structured</span>
+            `;
+            genList.appendChild(li);
+        });
+    }
 }
 
 // Drag & Drop / File selection triggers
-function triggerSourceSelect() {
-    document.getElementById("source-file-input").click();
+function triggerSourceSelect(part) {
+    if (part === 'ref') {
+        document.getElementById("ref-file-input").click();
+    } else {
+        document.getElementById("gen-file-input").click();
+    }
 }
 
-function handleSourceSelect(event) {
+function handleSourceSelect(event, part) {
     const file = event.target.files[0];
-    if (file) uploadSourceFile(file);
+    if (file) uploadStudyFile(file, part);
 }
 
-function handleDragOver(e) {
+function handleDragOver(e, part) {
     e.preventDefault();
-    document.getElementById("dropzone").classList.add("drag-active");
+    const zoneId = part === 'ref' ? "dropzone-ref" : "dropzone-gen";
+    document.getElementById(zoneId).classList.add("drag-active");
 }
 
-function handleDragLeave() {
-    document.getElementById("dropzone").classList.remove("drag-active");
+function handleDragLeave(part) {
+    const zoneId = part === 'ref' ? "dropzone-ref" : "dropzone-gen";
+    document.getElementById(zoneId).classList.remove("drag-active");
 }
 
-function handleDrop(e) {
+function handleDrop(e, part) {
     e.preventDefault();
-    handleDragLeave();
+    handleDragLeave(part);
     const file = e.dataTransfer.files[0];
-    if (file) uploadSourceFile(file);
+    if (file) uploadStudyFile(file, part);
 }
 
-async function uploadSourceFile(file) {
+async function uploadStudyFile(file, part) {
     if (!state.activeSubjectId) return;
     
-    const progressContainer = document.getElementById("upload-progress-container");
-    const progressFill = document.getElementById("progress-fill");
-    const progressPercent = document.getElementById("upload-progress-percent");
-    const progressText = document.getElementById("upload-status-text");
+    const containerId = part === 'ref' ? "progress-ref" : "progress-gen";
+    const fillId = part === 'ref' ? "fill-ref" : "fill-gen";
+    const percentId = part === 'ref' ? "percent-ref" : "percent-gen";
+    const statusId = part === 'ref' ? "status-ref" : "status-gen";
+    const filenameId = part === 'ref' ? "filename-ref" : "filename-gen";
     
-    document.getElementById("upload-progress-filename").textContent = file.name;
+    const progressContainer = document.getElementById(containerId);
+    const progressFill = document.getElementById(fillId);
+    const progressPercent = document.getElementById(percentId);
+    const progressText = document.getElementById(statusId);
+    
+    document.getElementById(filenameId).textContent = file.name;
     progressFill.style.width = "0%";
     progressPercent.textContent = "0%";
-    progressText.textContent = "Uploading raw file...";
+    progressText.textContent = part === 'ref' ? "Uploading to RAG vector database..." : "AI is transcribing and restructuring notes...";
     progressContainer.classList.remove("hidden");
     
     const formData = new FormData();
     formData.append("file", file);
     
     try {
-        // Simple progress simulation (fetch native API doesn't support upload progress out of box easily, so we simulate)
+        // Simulated progress logic
         let prog = 0;
         const interval = setInterval(() => {
             if (prog < 90) {
@@ -440,9 +499,10 @@ async function uploadSourceFile(file) {
                 progressFill.style.width = `${prog}%`;
                 progressPercent.textContent = `${prog}%`;
             }
-        }, 200);
+        }, 300);
         
-        const res = await fetch(`${BASE_URL}/subjects/${state.activeSubjectId}/sources`, {
+        const endpoint = part === 'ref' ? `/subjects/${state.activeSubjectId}/sources` : `/subjects/${state.activeSubjectId}/generate-notes`;
+        const res = await fetch(`${BASE_URL}${endpoint}`, {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${state.token}`
@@ -452,14 +512,14 @@ async function uploadSourceFile(file) {
         
         clearInterval(interval);
         
+        const data = await res.json();
         if (!res.ok) {
-            const data = await res.json();
-            throw new Error(data.detail || "Failed to process study note");
+            throw new Error(data.detail || "Failed to process raw notes file");
         }
         
         progressFill.style.width = "100%";
         progressPercent.textContent = "100%";
-        progressText.textContent = "Processing and Vector Chunking Completed!";
+        progressText.textContent = "Processing Completed Successfully!";
         
         setTimeout(() => {
             progressContainer.classList.add("hidden");
@@ -467,6 +527,11 @@ async function uploadSourceFile(file) {
         
         // Refresh sources list
         await refreshSubjectData();
+        
+        // If it was structured notes, open the resulting note directly in reader!
+        if (part === 'gen' && data.content) {
+            openReader(data.title, data.content);
+        }
     } catch (err) {
         clearInterval(interval);
         progressText.textContent = `Error: ${err.message}`;
@@ -476,6 +541,47 @@ async function uploadSourceFile(file) {
             progressFill.style.backgroundColor = "var(--primary)";
         }, 5000);
     }
+}
+
+// ==========================================================================
+// SOURCE READER MODAL
+// ==========================================================================
+
+async function openSourceReader(source) {
+    if (source.source_type === "text_pdf" && !source.storage_path.endsWith(".md")) {
+        // Native PDFs aren't raw text displayable out of context, show details or notify
+        openReader(source.title, `<p>This is a RAG context PDF reference file: <strong>${escapeHTML(source.title)}</strong>.</p><p>Its sections have been indexed and embedded inside your Chroma vector database collection. The chatbot accesses this content automatically to formulate answers.</p>`);
+        return;
+    }
+    
+    // Fetch raw markdown content from server
+    try {
+        const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/sources/${source.id}/content`);
+        if (!res.ok) throw new Error("Failed to load text content");
+        const data = await res.json();
+        
+        openReader(source.title, data.content);
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+function openReader(title, markdown) {
+    document.getElementById("reader-title").textContent = title;
+    document.getElementById("reader-content").innerHTML = formatMarkdown(markdown);
+    document.getElementById("reader-modal").classList.remove("hidden");
+}
+
+function closeReaderModal() {
+    document.getElementById("reader-modal").classList.add("hidden");
+    document.getElementById("reader-content").innerHTML = "";
+}
+
+function copyReaderContent() {
+    const text = document.getElementById("reader-content").innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        alert("Study notes text copied to clipboard!");
+    });
 }
 
 // ==========================================================================
@@ -619,7 +725,7 @@ async function handleQuerySubmit(event) {
         }
         
         // Render answer message
-        appendMessage("assistant", data.answer, data.sources);
+        appendMessage("assistant", data.answer, data.sources, queryText);
         
         // Reload history
         loadQueryHistory();
@@ -630,7 +736,7 @@ async function handleQuerySubmit(event) {
 }
 
 // Append message bubbles to feed helper
-function appendMessage(role, text, citations = []) {
+function appendMessage(role, text, citations = [], originalQuery = "") {
     const feed = document.getElementById("chat-feed");
     
     // Remove welcome card if present
@@ -678,6 +784,21 @@ function appendMessage(role, text, citations = []) {
         `;
     }
     
+    // If assistant, provide a "Save as Study Note" CTA footer!
+    if (role === "assistant" && text && !text.startsWith("⚠️ Error:") && !text.startsWith("Hi") && !text.startsWith("Hello")) {
+        // Deduce title
+        const cleanQuery = originalQuery.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 30);
+        const titleStr = cleanQuery ? `QA - ${cleanQuery}` : "Saved Study Note";
+        
+        bodyHTML += `
+            <div class="chat-action-footer">
+                <button class="btn-save-note" onclick="saveMessageAsNote(this, '${escapeHTML(titleStr)}', ${JSON.stringify(text).replace(/'/g, "\\'")})">
+                    <i class="fa-regular fa-bookmark"></i> Save as Study Note
+                </button>
+            </div>
+        `;
+    }
+    
     bubble.innerHTML = `
         <div class="message-avatar">
             <i class="${avatarIcon}"></i>
@@ -694,6 +815,34 @@ function appendMessage(role, text, citations = []) {
         top: feed.scrollHeight,
         behavior: 'smooth'
     });
+}
+
+async function saveMessageAsNote(button, title, content) {
+    if (!state.activeSubjectId) return;
+    
+    button.disabled = true;
+    button.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
+    
+    try {
+        const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/saved-notes`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, content })
+        });
+        
+        if (!res.ok) throw new Error("Failed to save note");
+        
+        button.innerHTML = `<i class="fa-solid fa-circle-check"></i> Saved Note ✓`;
+        button.className = "btn-save-note saved";
+        button.disabled = true;
+        
+        // Refresh sources lists in materials
+        await refreshSubjectData();
+    } catch (err) {
+        alert(err.message);
+        button.disabled = false;
+        button.innerHTML = `<i class="fa-regular fa-bookmark"></i> Save as Study Note`;
+    }
 }
 
 function appendTypingIndicator() {
@@ -730,27 +879,65 @@ function escapeHTML(str) {
     );
 }
 
-// Crude Markdown to HTML formatter for bolding, bullet points, tables, and paragraphs
+// Markdown to HTML formatter for bolding, bullet points, headers, tables, and paragraphs
 function formatMarkdown(text) {
     if (!text) return "";
     let html = escapeHTML(text);
     
+    // Parse tables
+    const lines = html.split("\n");
+    let inTable = false;
+    let tableHtml = "";
+    
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+        
+        if (line.startsWith("|") && line.endsWith("|")) {
+            if (!inTable) {
+                inTable = true;
+                tableHtml = "<table>";
+            }
+            
+            const cols = line.split("|").slice(1, -1).map(c => c.trim());
+            // Ignore separators
+            if (cols.every(c => c.startsWith("-"))) {
+                continue;
+            }
+            
+            const tag = tableHtml === "<table>" ? "th" : "td";
+            tableHtml += "<tr>" + cols.map(c => `<${tag}>${c}</${tag}>`).join("") + "</tr>";
+            lines[i] = ""; // clear processed line
+        } else {
+            if (inTable) {
+                inTable = false;
+                tableHtml += "</table>";
+                lines[i] = tableHtml + "\n" + lines[i];
+                tableHtml = "";
+            }
+        }
+    }
+    html = lines.join("\n");
+    
     // Formats paragraphs
-    html = html.split("\n\n").map(p => `<p>${p}</p>`).join("");
+    html = html.split("\n\n").map(p => {
+        p = p.trim();
+        if (!p) return "";
+        if (p.startsWith("<table") || p.startsWith("<tr>") || p.startsWith("<h2>") || p.startsWith("<h3>")) return p;
+        return `<p>${p}</p>`;
+    }).join("");
     
     // Bold tags
     html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    
+    // Headers (## Header)
+    html = html.replace(/##\s+(.*?)(?=<br>|<p>|$)/g, '<h2>$1</h2>');
+    html = html.replace(/#\s+(.*?)(?=<br>|<p>|$)/g, '<h2>$1</h2>');
     
     // Unordered lists bullets
     html = html.replace(/^[•\-\*]\s+(.*?)$/gm, '<li>$1</li>');
     
     // Wrap consecutive list items in <ul> tags
     html = html.replace(/(<li>.*?<\/li>)+/g, match => `<ul>${match}</ul>`);
-    
-    // Handle simple table formatting if tables exist
-    // Split table lines and rebuild using native table tags
-    const tableRegex = /\|([^|]+)\|/g;
-    // Replace markdown tables simply for a clean tabular layout
     
     return html;
 }
