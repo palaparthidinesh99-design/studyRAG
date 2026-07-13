@@ -336,40 +336,6 @@ def query_text(
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
 
-    # Detect greetings and simple friendly queries
-    greeting_pattern = re.compile(
-        r"^(hello|hi|hey|greetings|howdy|how are you|thanks|thank you|good morning|good afternoon|good evening)\b", 
-        re.IGNORECASE
-    )
-    if greeting_pattern.match(req.query.strip()):
-        try:
-            res = call_ollama("generate", {
-                "model": "gpt-oss:20b-cloud",
-                "prompt": f"You are a helpful, friendly AI study assistant. Respond to this friendly greeting/pleasantry concisely and warmly:\n{req.query}",
-                "stream": False
-            })
-            answer = res.json()["response"].strip()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
-            
-        # Log greeting query to DB
-        try:
-            supabase.table("queries").insert({
-                "subject_id": subject_id,
-                "input_type": "text",
-                "extracted_text": req.query,
-                "generated_answer": answer,
-                "sections_used": []
-            }).execute()
-        except Exception as e:
-            print(f"Failed to log query to DB: {e}")
-            
-        return {
-            "query": req.query,
-            "answer": answer,
-            "sources": []
-        }
-
     # 1. Retrieve merged context
     retrieved = retrieve_merged_context(subject_id, req.query, user_id)
     
@@ -404,9 +370,10 @@ def query_text(
     context = "\n\n---\n\n".join(context_parts)
     
     # 3. Call LLM (gpt-oss:20b-cloud)
-    prompt = f"""Use ONLY the following context to answer the question. 
-Structure your answer beautifully using markdown headers (##), bold terms, list items, and tables where applicable to make it highly structured and easy to read.
-Cite which source and section your answer comes from.
+    prompt = f"""You are a friendly, helpful AI study tutor for StudyRAG.
+Guidelines:
+1. If the user's message is a greeting (e.g. "hi", "hello", "good morning"), a thank you, or general small talk (e.g. "how are you?", "what can you do?"), respond to them warmly, helpfully, and concisely without complaining about missing context.
+2. If the user is asking a factual question about their subject, formulate a clear, detailed study answer based ONLY on the provided context. Structure the response beautifully using markdown headers (##), bold key concepts, list items, and tables where applicable to make it highly structured and easy to read. Cite which source and section your answer comes from. If the context does not contain the answer, politely state that you cannot find the answer in the uploaded materials.
 
 Context:
 {context}
@@ -606,8 +573,8 @@ def list_subject_books(
         
     try:
         # Fetch the linked global books
-        result = supabase.table("subject_books").select("global_book_id").eq("subject_id", subject_id).execute()
-        return [item["global_book_id"] for item in result.data]
+        result = supabase.table("subject_books").select("global_books(title)").eq("subject_id", subject_id).execute()
+        return [item["global_books"]["title"] for item in result.data if item.get("global_books")]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch linked books: {str(e)}")
 

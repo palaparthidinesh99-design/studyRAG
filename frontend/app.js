@@ -12,7 +12,7 @@ let state = {
     subjects: [],
     activeSubjectId: null,
     globalBooks: [],
-    linkedBookIds: [],
+    linkedBookIds: [], // Linked book titles
     personalSources: [],
     activeTab: "chat", // "chat" | "sources"
     ocrFile: null
@@ -149,10 +149,7 @@ async function authFetch(url, options = {}) {
 
 async function loadDashboardData() {
     try {
-        await Promise.all([
-            loadSubjects(),
-            loadGlobalCatalogue()
-        ]);
+        await loadSubjects();
     } catch (err) {
         console.error("Failed to load initial data", err);
     }
@@ -238,6 +235,12 @@ async function selectSubject(subjectId) {
     const subject = state.subjects.find(s => s.id === subjectId);
     document.getElementById("active-subject-name").textContent = subject ? subject.name : "Subject";
     
+    // Clear search bar and global books catalog placeholder
+    document.getElementById("openstax-search-input").value = "";
+    document.getElementById("global-books-list").innerHTML = `
+        <li class="sources-placeholder">Type in the search bar above to search all books in the OpenStax catalog...</li>
+    `;
+    
     // Clear chat console
     resetChatFeed();
     
@@ -261,8 +264,11 @@ async function refreshSubjectData() {
         document.getElementById("stat-sources").innerHTML = `<i class="fa-solid fa-file-pdf"></i> ${ragCount} Sources Uploaded`;
         document.getElementById("stat-books").innerHTML = `<i class="fa-solid fa-book"></i> ${state.linkedBookIds.length} Books Linked`;
         
-        // Render materials lists
+        // Render lists
         renderPersonalSources();
+        if (state.globalBooks.length > 0) {
+            renderGlobalBooks();
+        }
     } catch (err) {
         console.error("Error refreshing active subject details:", err);
     }
@@ -288,22 +294,34 @@ function switchMainTab(tab) {
 async function loadLinkedBooks() {
     try {
         const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/books`);
-        state.linkedBookIds = await res.json();
-        
-        renderGlobalBooks();
+        state.linkedBookIds = await res.json(); // Linked book titles list
     } catch (err) {
         console.error("Failed to load linked books list", err);
     }
 }
 
-async function loadGlobalCatalogue() {
+// OpenStax search keypress
+function handleOpenStaxSearchKeyup(event) {
+    if (event.key === "Enter") {
+        triggerOpenStaxSearch();
+    }
+}
+
+async function triggerOpenStaxSearch() {
+    const query = document.getElementById("openstax-search-input").value.trim();
+    if (!query) return;
+    
+    const list = document.getElementById("global-books-list");
+    list.innerHTML = `<li class="sources-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Searching OpenStax textbooks database...</li>`;
+    
     try {
-        const res = await fetch(`${BASE_URL}/global-books`);
-        state.globalBooks = await res.json();
+        const res = await fetch(`${BASE_URL}/openstax-books?query=${encodeURIComponent(query)}`);
+        if (!res.ok) throw new Error("Failed to search OpenStax catalog");
         
+        state.globalBooks = await res.json();
         renderGlobalBooks();
     } catch (err) {
-        console.error("Failed to load global books list", err);
+        list.innerHTML = `<li class="sources-placeholder error-text">⚠️ Error: ${err.message}</li>`;
     }
 }
 
@@ -312,7 +330,7 @@ function renderGlobalBooks() {
     list.innerHTML = "";
     
     if (state.globalBooks.length === 0) {
-        list.innerHTML = `<li class="sources-placeholder">No reference textbooks registered.</li>`;
+        list.innerHTML = `<li class="sources-placeholder">No matching OpenStax textbooks found.</li>`;
         return;
     }
     
@@ -320,15 +338,22 @@ function renderGlobalBooks() {
         const li = document.createElement("li");
         li.className = "book-card";
         
-        const isLinked = state.linkedBookIds.includes(book.id);
+        const isLinked = state.linkedBookIds.some(title => title.toLowerCase() === book.title.toLowerCase());
         const buttonHTML = isLinked 
             ? `<button class="btn-link linked" disabled>Linked ✓</button>`
-            : `<button class="btn-link" onclick="linkBook('${book.id}', this)">Link Textbook</button>`;
+            : `<button class="btn-link" onclick="linkOpenStaxBook(this, '${escapeHTML(book.openstax_id)}', '${escapeHTML(book.title)}', '${escapeHTML(book.pdf_url)}')">Link Textbook</button>`;
         
+        const coverImg = book.cover_url 
+            ? `<img src="${book.cover_url}" style="width: 48px; height: 64px; border-radius: 4px; object-fit: cover; border: 1px solid var(--border-color); flex-shrink:0;">`
+            : `<div style="width: 48px; height: 64px; border-radius: 4px; background: rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><i class="fa-solid fa-book" style="color:var(--text-muted);"></i></div>`;
+            
         li.innerHTML = `
-            <div>
-                <div class="book-title">${escapeHTML(book.title)}</div>
-                <div class="book-author">OpenStax College Reference</div>
+            <div style="display:flex; gap:12px; align-items:center;">
+                ${coverImg}
+                <div>
+                    <div class="book-title" title="${escapeHTML(book.title)}">${escapeHTML(book.title)}</div>
+                    <div class="book-author">OpenStax College Catalog</div>
+                </div>
             </div>
             ${buttonHTML}
         `;
@@ -336,24 +361,30 @@ function renderGlobalBooks() {
     });
 }
 
-async function linkBook(bookId, button) {
+async function linkOpenStaxBook(button, openstaxId, title, pdfUrl) {
     if (!state.activeSubjectId) return;
     
     button.disabled = true;
     button.textContent = "Linking...";
     
     try {
-        const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/books/${bookId}`, {
-            method: "POST"
+        const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/books/openstax`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                openstax_id: openstaxId,
+                title: title,
+                pdf_url: pdfUrl
+            })
         });
         
-        if (!res.ok) throw new Error("Could not link textbook");
+        if (!res.ok) throw new Error("Could not link OpenStax textbook");
         
         button.textContent = "Linked ✓";
         button.classList.add("linked");
         button.disabled = true;
         
-        // Refresh subject stats
+        // Refresh subject details
         await refreshSubjectData();
     } catch (err) {
         alert(err.message);
@@ -378,7 +409,7 @@ function renderPersonalSources() {
     
     const refSources = state.personalSources.filter(s => s.source_type !== "generated_note");
     if (refSources.length === 0) {
-        refList.innerHTML = `<li class="sources-placeholder">No reference notes uploaded yet.</li>`;
+        refList.innerHTML = `<li class="sources-placeholder">No reference sources (senior notes, PDFs, papers) uploaded yet.</li>`;
     } else {
         refSources.forEach(source => {
             const li = document.createElement("li");
@@ -393,7 +424,7 @@ function renderPersonalSources() {
             
             if (isSavedNote) {
                 iconClass = "fa-solid fa-bookmark note";
-                badgeText = "Saved Note";
+                badgeText = "Saved Chat";
             } else if (!isPdf) {
                 iconClass = "fa-solid fa-image image";
                 badgeText = "Whiteboard";
@@ -428,7 +459,7 @@ function renderPersonalSources() {
                     <i class="fa-solid fa-robot note"></i>
                     <span class="source-title-text" title="${escapeHTML(source.title)}">${escapeHTML(source.title)}</span>
                 </div>
-                <span class="source-badge">AI Structured</span>
+                <span class="source-badge">AI Notes</span>
             `;
             genList.appendChild(li);
         });

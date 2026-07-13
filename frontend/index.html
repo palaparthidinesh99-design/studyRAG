@@ -198,10 +198,22 @@
                         <div class="catalog-section">
                             <div class="catalog-card">
                                 <h3><i class="fa-solid fa-globe"></i> OpenStax Global Textbook Reference Catalogue</h3>
-                                <p class="section-desc">Ground your chatbot's search indexes in official syllabus textbooks by linking them below.</p>
+                                <p class="section-desc">Search and link any book in the entire OpenStax catalog to ground your chatbot queries.</p>
+                                
+                                <!-- OpenStax search input -->
+                                <div class="openstax-search-bar-wrapper">
+                                    <div class="input-wrapper">
+                                        <i class="fa-solid fa-magnifying-glass"></i>
+                                        <input type="text" id="openstax-search-input" placeholder="Search textbooks (e.g. Physics, Chemistry, Biology)..." onkeyup="handleOpenStaxSearchKeyup(event)">
+                                    </div>
+                                    <button class="btn primary" onclick="triggerOpenStaxSearch()">
+                                        <i class="fa-solid fa-magnifying-glass"></i> Search
+                                    </button>
+                                </div>
+
                                 <ul id="global-books-list" class="global-books-list horizontal">
                                     <!-- Dynamically populated -->
-                                    <li class="loading-placeholder">Loading textbook catalogue...</li>
+                                    <li class="sources-placeholder">Type in the search bar above to search all books in the OpenStax catalog...</li>
                                 </ul>
                             </div>
                         </div>
@@ -213,12 +225,12 @@
                                     <h3><i class="fa-solid fa-layer-group"></i> 1. RAG Search Reference Materials</h3>
                                     <span class="part-badge bg-primary">Context Grounding</span>
                                 </div>
-                                <p class="section-desc font-small">Ingest slides, notes, or scanned whiteboard note photos of seniors. Chunks are embedded and indexed for chat searches.</p>
+                                <p class="section-desc font-small">Upload notes of seniors, reference books, or research paper PDFs. Chunks are embedded and indexed for chat searches.</p>
 
                                 <div id="dropzone-ref" class="file-dropzone" ondragover="handleDragOver(event, 'ref')" ondragleave="handleDragLeave('ref')" ondrop="handleDrop(event, 'ref')" onclick="triggerSourceSelect('ref')">
                                     <i class="fa-solid fa-cloud-arrow-up"></i>
-                                    <p class="dropzone-title">Upload RAG Sources</p>
-                                    <p class="dropzone-subtitle">PDF Notes or Whiteboard Photos (PNG, JPG, WEBP)</p>
+                                    <p class="dropzone-title">Upload RAG Reference Files</p>
+                                    <p class="dropzone-subtitle">Accepts PDF reference books, research papers, or notes</p>
                                     <input type="file" id="ref-file-input" class="hidden" accept="application/pdf,image/*" onchange="handleSourceSelect(event, 'ref')">
                                 </div>
 
@@ -245,13 +257,13 @@
                                     <h3><i class="fa-solid fa-sparkles"></i> 2. AI Note Restructuring Generator</h3>
                                     <span class="part-badge bg-accent">AI Auto-Notes</span>
                                 </div>
-                                <p class="section-desc font-small">Upload your messy, disorganized whiteboard snaps or lecture slides. The AI will instantly rewrite them into beautiful, structured guides.</p>
+                                <p class="section-desc font-small">Upload classroom whiteboard photos, blackboard pictures, or scanned handwritten note images. The AI will instantly restructure it into detailed markdown study guides.</p>
 
                                 <div id="dropzone-gen" class="file-dropzone dropzone-accent" ondragover="handleDragOver(event, 'gen')" ondragleave="handleDragLeave('gen')" ondrop="handleDrop(event, 'gen')" onclick="triggerSourceSelect('gen')">
                                     <i class="fa-solid fa-wand-magic-sparkles"></i>
-                                    <p class="dropzone-title">Upload Messy Notes</p>
-                                    <p class="dropzone-subtitle">PDF Lecture Scans or Whiteboard Photos</p>
-                                    <input type="file" id="gen-file-input" class="hidden" accept="application/pdf,image/*" onchange="handleSourceSelect(event, 'gen')">
+                                    <p class="dropzone-title">Upload Board Photos & Scans</p>
+                                    <p class="dropzone-subtitle">Accepts whiteboard snaps, blackboard pictures, or handwritten note images (PNG, JPG, WEBP)</p>
+                                    <input type="file" id="gen-file-input" class="hidden" accept="image/*" onchange="handleSourceSelect(event, 'gen')">
                                 </div>
 
                                 <div id="progress-gen" class="upload-progress-container hidden">
