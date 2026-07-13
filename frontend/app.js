@@ -294,9 +294,12 @@ function switchMainTab(tab) {
 async function loadLinkedBooks() {
     try {
         const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/books`);
-        state.linkedBookIds = await res.json(); // Linked book titles list
+        if (!res.ok) throw new Error("Failed to load linked books");
+        const data = await res.json();
+        state.linkedBookIds = Array.isArray(data) ? data : [];
     } catch (err) {
         console.error("Failed to load linked books list", err);
+        state.linkedBookIds = [];
     }
 }
 
