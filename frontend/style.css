@@ -3,26 +3,26 @@
    ========================================================================== */
 
 :root {
-    --bg-dark: #0b0f19;
-    --bg-card: rgba(17, 24, 39, 0.7);
-    --bg-hover: rgba(31, 41, 55, 0.5);
-    --border-color: rgba(255, 255, 255, 0.08);
+    --bg-dark: #1a1a1a; /* LeetCode main bg */
+    --bg-card: #282828; /* LeetCode panel card bg */
+    --bg-hover: #3e3e3e; /* LeetCode hovered elements */
+    --border-color: #383838; /* LeetCode pane dividers */
     
-    --primary: #10b981; /* Emerald */
-    --primary-glow: rgba(16, 185, 129, 0.2);
-    --accent: #6366f1; /* Indigo */
-    --accent-glow: rgba(99, 102, 241, 0.25);
+    --primary: #ffa116; /* LeetCode orange primary color */
+    --primary-glow: rgba(255, 161, 22, 0.15);
+    --accent: #00b8a3; /* LeetCode green accent */
+    --accent-glow: rgba(0, 184, 163, 0.2);
     
-    --text-main: #f3f4f6;
-    --text-muted: #9ca3af;
-    --text-inverse: #0b0f19;
+    --text-main: #eff1f6; /* LeetCode high contrast white */
+    --text-muted: #8c8c8c; /* LeetCode lower contrast gray */
+    --text-inverse: #1a1a1a;
     
-    --radius-lg: 16px;
-    --radius-md: 12px;
-    --radius-sm: 8px;
+    --radius-lg: 8px; /* LeetCode uses sharper corners */
+    --radius-md: 6px;
+    --radius-sm: 4px;
     
-    --shadow-premium: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --shadow-premium: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Base Styles */
@@ -1523,4 +1523,174 @@ h1, h2, h3, h4, .logo {
     background-color: rgba(239, 68, 68, 0.15);
     color: #ef4444;
     border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Split Pane Layout (LeetCode style) */
+.workspace-layout {
+    display: flex;
+    flex-direction: row;
+    height: calc(100vh - 64px);
+    background-color: var(--bg-dark);
+    gap: 8px;
+    padding: 8px;
+}
+
+.workspace-pane {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.left-pane {
+    flex: 1.1;
+    height: 100%;
+}
+
+.right-pane {
+    flex: 0.9;
+    height: 100%;
+}
+
+/* Tabs switcher for left pane */
+.pane-tabs {
+    display: flex;
+    background-color: #202020;
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 8px;
+}
+
+.pane-tab {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: var(--transition-smooth);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pane-tab:hover {
+    color: var(--text-main);
+}
+
+.pane-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    font-weight: 600;
+}
+
+.pane-body {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    height: calc(100% - 45px);
+}
+
+.left-tab-panel {
+    display: none;
+    height: 100%;
+    padding: 16px;
+    overflow-y: auto;
+}
+
+.left-tab-panel.active {
+    display: block;
+}
+
+/* Header bar for right pane (Subject title and Chat toggles) */
+.pane-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #202020;
+    border-bottom: 1px solid var(--border-color);
+    padding: 10px 16px;
+}
+
+.active-subject-header {
+    font-size: 1.1rem;
+    color: var(--text-main);
+    margin: 0;
+    font-weight: 600;
+}
+
+.right-pane-toggles {
+    display: flex;
+    gap: 4px;
+    background-color: rgba(255,255,255,0.03);
+    padding: 2px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+.toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-weight: 550;
+    transition: var(--transition-smooth);
+}
+
+.toggle-btn.active {
+    background-color: var(--bg-hover);
+    color: var(--primary);
+}
+
+.right-tab-panel {
+    display: none;
+    flex: 1;
+    overflow: hidden;
+}
+
+.right-tab-panel.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Reader header and view styles in pane */
+.reader-header-pane {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+}
+
+.reader-title {
+    font-size: 1.4rem;
+    color: var(--text-main);
+    margin-bottom: 16px;
+}
+
+.reader-content {
+    color: #dfdfdf;
+    line-height: 1.6;
+    overflow-y: auto;
+    max-height: calc(100vh - 250px);
+}
+
+/* Custom badge override colors */
+.badge-openstax {
+    background-color: rgba(0, 184, 163, 0.15) !important;
+    color: #00b8a3 !important;
+    border: 1px solid rgba(0, 184, 163, 0.3) !important;
+}
+
+.badge-otl {
+    background-color: rgba(255, 161, 22, 0.15) !important;
+    color: #ffa116 !important;
+    border: 1px solid rgba(255, 161, 22, 0.3) !important;
 }

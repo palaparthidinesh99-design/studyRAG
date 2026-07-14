@@ -233,12 +233,13 @@ async function selectSubject(subjectId) {
     document.getElementById("subject-active-view").classList.remove("hidden");
     
     const subject = state.subjects.find(s => s.id === subjectId);
-    document.getElementById("active-subject-name").textContent = subject ? subject.name : "Subject";
+    const headerDisplay = document.getElementById("active-subject-name-display");
+    if (headerDisplay) headerDisplay.textContent = subject ? subject.name : "Subject";
     
     // Clear search bar and global books catalog placeholder
     document.getElementById("openstax-search-input").value = "";
     document.getElementById("global-books-list").innerHTML = `
-        <li class="sources-placeholder">Type in the search bar above to search all books in the OpenStax catalog...</li>
+        <li class="sources-placeholder">Type in the search bar above to search textbooks...</li>
     `;
     
     // Clear chat console
@@ -246,7 +247,8 @@ async function selectSubject(subjectId) {
     
     // Refresh stats & resources
     await refreshSubjectData();
-    switchMainTab("chat");
+    switchLeftTab("catalog");
+    switchRightPanel("chat");
 }
 
 async function refreshSubjectData() {
@@ -274,17 +276,57 @@ async function refreshSubjectData() {
     }
 }
 
-// Tab Selection (Chat / Materials)
-function switchMainTab(tab) {
-    state.activeTab = tab;
+// Split Pane Tab Selection (Left Pane: Catalog / References / Notes)
+function switchLeftTab(tab) {
+    state.activeLeftTab = tab;
     
     // Toggle active buttons
-    document.getElementById("tab-btn-chat").classList.toggle("active", tab === "chat");
-    document.getElementById("tab-btn-sources").classList.toggle("active", tab === "sources");
+    document.getElementById("left-tab-btn-catalog").classList.toggle("active", tab === "catalog");
+    document.getElementById("left-tab-btn-references").classList.toggle("active", tab === "references");
+    document.getElementById("left-tab-btn-notes").classList.toggle("active", tab === "notes");
     
     // Toggle panels
-    document.getElementById("panel-chat").classList.toggle("active", tab === "chat");
-    document.getElementById("panel-sources").classList.toggle("active", tab === "sources");
+    document.getElementById("left-tab-catalog").classList.toggle("active", tab === "catalog");
+    document.getElementById("left-tab-references").classList.toggle("active", tab === "references");
+    document.getElementById("left-tab-notes").classList.toggle("active", tab === "notes");
+
+    // Close in-pane reader view when switching tabs
+    if (tab !== "notes") {
+        closeReaderInPane();
+    }
+}
+
+// Split Pane Toggle (Right Pane: Chat / History)
+function switchRightPanel(panel) {
+    // Toggle active buttons
+    document.getElementById("right-toggle-chat").classList.toggle("active", panel === "chat");
+    document.getElementById("right-toggle-history").classList.toggle("active", panel === "history");
+    
+    // Toggle panels
+    document.getElementById("right-panel-chat").classList.toggle("active", panel === "chat");
+    document.getElementById("right-panel-history").classList.toggle("active", panel === "history");
+}
+
+// In-pane Markdown Reader View for AI Study Guides
+function openReaderInPane(title, markdown) {
+    // Hide upload dropzone and guide list
+    document.getElementById("notes-list-view").classList.add("hidden");
+    
+    // Set content
+    document.getElementById("pane-reader-title").textContent = title;
+    document.getElementById("pane-reader-content").innerHTML = formatMarkdown(markdown);
+    
+    // Show reader pane
+    document.getElementById("notes-reader-view").classList.remove("hidden");
+}
+
+function closeReaderInPane() {
+    // Hide reader pane
+    document.getElementById("notes-reader-view").classList.add("hidden");
+    document.getElementById("pane-reader-content").innerHTML = "";
+    
+    // Show upload and guide list
+    document.getElementById("notes-list-view").classList.remove("hidden");
 }
 
 // ==========================================================================
@@ -315,7 +357,7 @@ async function triggerOpenStaxSearch() {
     if (!query) return;
     
     const list = document.getElementById("global-books-list");
-    list.innerHTML = `<li class="sources-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Searching OpenStax & arXiv global catalogue...</li>`;
+    list.innerHTML = `<li class="sources-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Searching global books catalogue...</li>`;
     
     try {
         const res = await fetch(`${BASE_URL}/catalogue/search?query=${encodeURIComponent(query)}`);
@@ -333,7 +375,7 @@ function renderGlobalBooks() {
     list.innerHTML = "";
     
     if (state.globalBooks.length === 0) {
-        list.innerHTML = `<li class="sources-placeholder">No matching textbooks or research papers found.</li>`;
+        list.innerHTML = `<li class="sources-placeholder">No matching textbooks found.</li>`;
         return;
     }
     
@@ -348,10 +390,10 @@ function renderGlobalBooks() {
         
         const coverImg = book.cover_url 
             ? `<img src="${book.cover_url}" style="width: 48px; height: 64px; border-radius: 4px; object-fit: cover; border: 1px solid var(--border-color); flex-shrink:0;">`
-            : `<div style="width: 48px; height: 64px; border-radius: 4px; background: rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><i class="fa-solid ${book.source === 'arxiv' ? 'fa-file-pdf' : 'fa-book'}" style="color:var(--text-muted);"></i></div>`;
+            : `<div style="width: 48px; height: 64px; border-radius: 4px; background: rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:center; flex-shrink:0;"><i class="fa-solid fa-book" style="color:var(--text-muted);"></i></div>`;
             
-        const sourceLabel = book.source === 'arxiv' ? 'arXiv Engineering Paper' : 'OpenStax College Catalog';
-        const sourceBadgeClass = book.source === 'arxiv' ? 'badge-arxiv' : 'badge-openstax';
+        const sourceLabel = book.source === 'opentextbooklibrary' ? 'Open Textbook Library' : 'OpenStax Textbook';
+        const sourceBadgeClass = book.source === 'opentextbooklibrary' ? 'badge-otl' : 'badge-openstax';
             
         li.innerHTML = `
             <div style="display:flex; gap:12px; align-items:center;">
@@ -568,7 +610,8 @@ async function uploadStudyFile(file, part) {
         
         // If it was structured notes, open the resulting note directly in reader!
         if (part === 'gen' && data.content) {
-            openReader(data.title, data.content);
+            switchLeftTab('notes');
+            openReaderInPane(data.title, data.content);
         }
     } catch (err) {
         clearInterval(interval);
@@ -586,8 +629,8 @@ async function uploadStudyFile(file, part) {
 // ==========================================================================
 
 async function openSourceReader(source) {
-    if (source.source_type === "text_pdf" && !source.storage_path.endsWith(".md")) {
-        // Native PDFs aren't raw text displayable out of context, show details or notify
+    if (source.source_type === "text_pdf") {
+        // Native PDFs aren't raw text displayable out of context, show details in modal
         openReader(source.title, `<p>This is a RAG context PDF reference file: <strong>${escapeHTML(source.title)}</strong>.</p><p>Its sections have been indexed and embedded inside your Chroma vector database collection. The chatbot accesses this content automatically to formulate answers.</p>`);
         return;
     }
@@ -598,7 +641,8 @@ async function openSourceReader(source) {
         if (!res.ok) throw new Error("Failed to load text content");
         const data = await res.json();
         
-        openReader(source.title, data.content);
+        switchLeftTab('notes');
+        openReaderInPane(source.title, data.content);
     } catch (err) {
         alert(err.message);
     }

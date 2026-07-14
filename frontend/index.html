@@ -111,174 +111,205 @@
             <!-- MAIN CONTENT AREA -->
             <main class="main-content">
                 <!-- ACTIVE SUBJECT VIEW -->
-                <div id="subject-active-view" class="hidden">
-                    <header class="content-header">
-                        <div class="subject-info">
-                            <h1 id="active-subject-name">Subject Title</h1>
-                            <div class="subject-stats">
-                                <span id="stat-books"><i class="fa-solid fa-book"></i> 0 Books Linked</span>
-                                <span id="stat-sources"><i class="fa-solid fa-file-pdf"></i> 0 Sources Uploaded</span>
-                            </div>
-                        </div>
-
-                        <!-- Panel toggles -->
-                        <div class="panel-toggles">
-                            <button id="tab-btn-chat" class="tab-btn active" onclick="switchMainTab('chat')">
-                                <i class="fa-regular fa-comment-dots"></i> Chat Console
+                <div id="subject-active-view" class="hidden workspace-layout">
+                    <!-- LEFT WORKSPACE PANE -->
+                    <div class="workspace-pane left-pane">
+                        <div class="pane-tabs">
+                            <button id="left-tab-btn-catalog" class="pane-tab active" onclick="switchLeftTab('catalog')">
+                                <i class="fa-solid fa-globe"></i> Global Catalogue
                             </button>
-                            <button id="tab-btn-sources" class="tab-btn" onclick="switchMainTab('sources')">
-                                <i class="fa-regular fa-folder-open"></i> Study Materials
+                            <button id="left-tab-btn-references" class="pane-tab" onclick="switchLeftTab('references')">
+                                <i class="fa-solid fa-folder-open"></i> Reference Materials
+                            </button>
+                            <button id="left-tab-btn-notes" class="pane-tab" onclick="switchLeftTab('notes')">
+                                <i class="fa-solid fa-sparkles"></i> AI Study Guides
                             </button>
                         </div>
-                    </header>
-
-                    <!-- CHAT CONSOLE PANEL -->
-                    <div id="panel-chat" class="panel active">
-                        <div class="chat-wrapper">
-                            <!-- Messages Feed -->
-                            <div id="chat-feed" class="chat-feed">
-                                <div class="welcome-chat-message">
-                                    <div class="welcome-icon">
-                                        <i class="fa-solid fa-feather-pointed"></i>
-                                    </div>
-                                    <h3>Ask Your Context-Grounded Question</h3>
-                                    <p>I will search your uploaded notes and linked global textbooks to generate a formatted, cited answer.</p>
-                                    <div class="chat-quick-tags">
-                                        <span>Ground-truth retrieval</span>
-                                        <span>No audio hallucination</span>
-                                        <span>Page-level citations</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Input Console -->
-                            <div class="chat-input-area">
-                                <div id="ocr-preview-container" class="hidden">
-                                    <div class="ocr-preview">
-                                        <i class="fa-regular fa-image"></i>
-                                        <span id="ocr-preview-filename">image.jpg</span>
-                                        <button class="btn-remove-preview" onclick="cancelOcrUpload()">
-                                            <i class="fa-solid fa-xmark"></i>
+                        
+                        <div class="pane-body">
+                            <!-- CATALOG TAB -->
+                            <div id="left-tab-catalog" class="left-tab-panel active">
+                                <div class="catalog-card">
+                                    <h3><i class="fa-solid fa-globe"></i> Global Textbook Catalogue</h3>
+                                    <p class="section-desc">Search and link open-access college textbooks from OpenStax and Open Textbook Library.</p>
+                                    
+                                    <div class="openstax-search-bar-wrapper">
+                                        <div class="search-input-container">
+                                            <i class="fa-solid fa-magnifying-glass"></i>
+                                            <input type="text" id="openstax-search-input" placeholder="Search topics (e.g. Calculus, Physics, Economics)..." onkeyup="handleOpenStaxSearchKeyup(event)">
+                                        </div>
+                                        <button class="btn primary" onclick="triggerOpenStaxSearch()">
+                                            <i class="fa-solid fa-search"></i> Search
                                         </button>
                                     </div>
+                                    
+                                    <ul id="global-books-list" class="materials-list custom-scroll" style="max-height: calc(100vh - 250px);">
+                                        <li class="sources-placeholder">Type in the search bar above to search books...</li>
+                                    </ul>
                                 </div>
+                            </div>
+                            
+                            <!-- REFERENCES TAB -->
+                            <div id="left-tab-references" class="left-tab-panel">
+                                <div class="materials-card">
+                                    <div class="part-header">
+                                        <h3><i class="fa-solid fa-layer-group"></i> Grounding Reference Materials</h3>
+                                        <span class="part-badge bg-primary">RAG Context</span>
+                                    </div>
+                                    <p class="section-desc">Upload reference books, notes of seniors, or papers. Chunks are embedded and indexed for chat searches.</p>
 
-                                <form id="chat-input-form" onsubmit="handleQuerySubmit(event)">
-                                    <!-- Photo query button -->
-                                    <button type="button" class="btn-input-action" onclick="triggerOcrSelect()" title="Ask with Photo (OCR)">
-                                        <i class="fa-regular fa-camera"></i>
-                                    </button>
-                                    <input type="file" id="ocr-file-input" class="hidden" accept="image/*" onchange="handleOcrSelect(event)">
+                                    <div id="dropzone-ref" class="file-dropzone" ondragover="handleDragOver(event, 'ref')" ondragleave="handleDragLeave('ref')" ondrop="handleDrop(event, 'ref')" onclick="triggerSourceSelect('ref')">
+                                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                                        <p class="dropzone-title">Upload RAG Reference Files</p>
+                                        <p class="dropzone-subtitle">Accepts PDF reference books or notes</p>
+                                        <input type="file" id="ref-file-input" class="hidden" accept="application/pdf,image/*" onchange="handleSourceSelect(event, 'ref')">
+                                    </div>
 
-                                    <input type="text" id="chat-input" placeholder="Ask a question about this subject..." autocomplete="off" required>
+                                    <div id="progress-ref" class="upload-progress-container hidden">
+                                        <div class="progress-bar-header">
+                                            <span id="filename-ref">note.pdf</span>
+                                            <span id="percent-ref">0%</span>
+                                        </div>
+                                        <div class="progress-track">
+                                            <div id="fill-ref" class="progress-fill"></div>
+                                        </div>
+                                        <p id="status-ref" class="progress-status-text">Uploading raw files...</p>
+                                    </div>
 
-                                    <button type="submit" class="btn-send" title="Send Question">
-                                        <i class="fa-solid fa-paper-plane"></i>
-                                    </button>
-                                </form>
+                                    <ul id="ref-sources-list" class="personal-sources-list custom-scroll" style="max-height: calc(100vh - 450px);">
+                                        <li class="sources-placeholder">No reference sources uploaded yet</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <!-- AI NOTES TAB -->
+                            <div id="left-tab-notes" class="left-tab-panel">
+                                <!-- List View / Note Upload -->
+                                <div id="notes-list-view">
+                                    <div class="materials-card">
+                                        <div class="part-header">
+                                            <h3><i class="fa-solid fa-sparkles"></i> AI Note Restructuring</h3>
+                                            <span class="part-badge bg-accent">AI Auto-Notes</span>
+                                        </div>
+                                        <p class="section-desc">Upload whiteboard scans or board photos. The AI will instantly restructure it into markdown study guides.</p>
+
+                                        <div id="dropzone-gen" class="file-dropzone dropzone-accent" ondragover="handleDragOver(event, 'gen')" ondragleave="handleDragLeave('gen')" ondrop="handleDrop(event, 'gen')" onclick="triggerSourceSelect('gen')">
+                                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                            <p class="dropzone-title">Upload Board Photos & Scans</p>
+                                            <p class="dropzone-subtitle">Whiteboard snaps, blackboard pictures, or handwritten note images</p>
+                                            <input type="file" id="gen-file-input" class="hidden" accept="image/*" onchange="handleSourceSelect(event, 'gen')">
+                                        </div>
+
+                                        <div id="progress-gen" class="upload-progress-container hidden">
+                                            <div class="progress-bar-header">
+                                                <span id="filename-gen">messy_note.jpg</span>
+                                                <span id="percent-gen">0%</span>
+                                            </div>
+                                            <div class="progress-track">
+                                                <div id="fill-gen" class="progress-fill bg-accent-fill"></div>
+                                            </div>
+                                            <p id="status-gen" class="progress-status-text text-accent">Structuring your notes...</p>
+                                        </div>
+
+                                        <ul id="gen-sources-list" class="personal-sources-list custom-scroll" style="max-height: calc(100vh - 450px);">
+                                            <li class="sources-placeholder">No AI structured guides generated yet</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                
+                                <!-- Integrated Note Reader View (in-pane!) -->
+                                <div id="notes-reader-view" class="hidden">
+                                    <div class="reader-header-pane">
+                                        <button class="btn secondary btn-small" onclick="closeReaderInPane()">
+                                            <i class="fa-solid fa-arrow-left"></i> Back to Guides
+                                        </button>
+                                        <div class="reader-actions">
+                                            <button class="btn-icon-small" onclick="copyReaderContent()" title="Copy to Clipboard">
+                                                <i class="fa-regular fa-copy"></i> Copy
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <h2 id="pane-reader-title" class="reader-title">Guide Title</h2>
+                                    <div id="pane-reader-content" class="reader-content custom-scroll">
+                                        <!-- Markdown Renders here -->
+                                    </div>
+                                </div>
                             </div>
                         </div>
-
-                        <!-- History Sidebar -->
-                        <aside class="chat-history-sidebar">
-                            <div class="history-header">
-                                <i class="fa-solid fa-clock-rotate-left"></i>
-                                <span>Recent Queries</span>
-                            </div>
-                            <ul id="history-list" class="history-list">
-                                <!-- Dynamically populated -->
-                                <li class="history-placeholder">No query history yet</li>
-                            </ul>
-                        </aside>
                     </div>
-
-                    <!-- STUDY MATERIALS PANEL -->
-                    <div id="panel-sources" class="panel">
-                        <!-- Upper Catalog Section -->
-                        <div class="catalog-section">
-                            <div class="catalog-card">
-                                <h3><i class="fa-solid fa-globe"></i> Global Textbook & Research Catalogue</h3>
-                                <p class="section-desc">Search and link OpenStax textbooks and arXiv engineering papers.</p>
-                                
-                                <!-- Global catalogue search input -->
-                                <div class="openstax-search-bar-wrapper">
-                                    <div class="search-input-container">
-                                        <i class="fa-solid fa-magnifying-glass"></i>
-                                        <input type="text" id="openstax-search-input" placeholder="Search topics (e.g. Machine Learning, Thermodynamics)..." onkeyup="handleOpenStaxSearchKeyup(event)">
-                                    </div>
-                                    <button class="btn primary" onclick="triggerOpenStaxSearch()">
-                                        <i class="fa-solid fa-search"></i> Search
-                                    </button>
+                    
+                    <!-- RIGHT WORKSPACE PANE -->
+                    <div class="workspace-pane right-pane">
+                        <div class="pane-header-bar">
+                            <div class="subject-title-wrapper">
+                                <h2 id="active-subject-name-display" class="active-subject-header">Subject Title</h2>
+                                <div class="subject-stats">
+                                    <span id="stat-books"><i class="fa-solid fa-book"></i> 0 Linked</span>
+                                    <span id="stat-sources"><i class="fa-solid fa-file"></i> 0 Files</span>
                                 </div>
-                                
-                                <ul id="global-books-list" class="materials-list custom-scroll" style="max-height: 250px;">
-                                    <li class="sources-placeholder">Type in the search bar above to search the global catalogue...</li>
-                                </ul>
+                            </div>
+                            
+                            <!-- Chat/History Panel Toggles inside right pane -->
+                            <div class="right-pane-toggles">
+                                <button id="right-toggle-chat" class="toggle-btn active" onclick="switchRightPanel('chat')">
+                                    <i class="fa-regular fa-comment-dots"></i> Chat
+                                </button>
+                                <button id="right-toggle-history" class="toggle-btn" onclick="switchRightPanel('history')">
+                                    <i class="fa-solid fa-clock-rotate-left"></i> History
+                                </button>
                             </div>
                         </div>
-
-                        <div class="sources-grid two-part">
-                            <!-- PART A: RAG Reference Ingestor -->
-                            <div class="materials-card part-card">
-                                <div class="part-header">
-                                    <h3><i class="fa-solid fa-layer-group"></i> 1. RAG Search Reference Materials</h3>
-                                    <span class="part-badge bg-primary">Context Grounding</span>
-                                </div>
-                                <p class="section-desc font-small">Upload notes of seniors, reference books, or research paper PDFs. Chunks are embedded and indexed for chat searches.</p>
-
-                                <div id="dropzone-ref" class="file-dropzone" ondragover="handleDragOver(event, 'ref')" ondragleave="handleDragLeave('ref')" ondrop="handleDrop(event, 'ref')" onclick="triggerSourceSelect('ref')">
-                                    <i class="fa-solid fa-cloud-arrow-up"></i>
-                                    <p class="dropzone-title">Upload RAG Reference Files</p>
-                                    <p class="dropzone-subtitle">Accepts PDF reference books, research papers, or notes</p>
-                                    <input type="file" id="ref-file-input" class="hidden" accept="application/pdf,image/*" onchange="handleSourceSelect(event, 'ref')">
-                                </div>
-
-                                <div id="progress-ref" class="upload-progress-container hidden">
-                                    <div class="progress-bar-header">
-                                        <span id="filename-ref">note.pdf</span>
-                                        <span id="percent-ref">0%</span>
+                        
+                        <!-- Chat Feed Area -->
+                        <div id="right-panel-chat" class="right-tab-panel active">
+                            <div class="chat-wrapper">
+                                <div id="chat-feed" class="chat-feed custom-scroll">
+                                    <div class="welcome-chat-message">
+                                        <div class="welcome-icon">
+                                            <i class="fa-solid fa-feather-pointed"></i>
+                                        </div>
+                                        <h3>Ask Your Context-Grounded Question</h3>
+                                        <p>I will search your uploaded notes and linked textbooks to generate a formatted, cited answer.</p>
+                                        <div class="chat-quick-tags">
+                                            <span>Context-grounded</span>
+                                            <span>No hallucinations</span>
+                                            <span>Page-level citations</span>
+                                        </div>
                                     </div>
-                                    <div class="progress-track">
-                                        <div id="fill-ref" class="progress-fill"></div>
-                                    </div>
-                                    <p id="status-ref" class="progress-status-text">Uploading raw files...</p>
                                 </div>
 
-                                <ul id="ref-sources-list" class="personal-sources-list">
-                                    <!-- Dynamically populated -->
-                                    <li class="sources-placeholder">No reference sources uploaded yet</li>
-                                </ul>
+                                <div class="chat-input-area">
+                                    <div id="ocr-preview-container" class="hidden">
+                                        <div class="ocr-preview">
+                                            <i class="fa-regular fa-image"></i>
+                                            <span id="ocr-preview-filename">image.jpg</span>
+                                            <button class="btn-remove-preview" onclick="cancelOcrUpload()">
+                                                <i class="fa-solid fa-xmark"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <form id="chat-input-form" onsubmit="handleQuerySubmit(event)">
+                                        <button type="button" class="btn-input-action" onclick="triggerOcrSelect()" title="Ask with Photo (OCR)">
+                                            <i class="fa-regular fa-camera"></i>
+                                        </button>
+                                        <input type="file" id="ocr-file-input" class="hidden" accept="image/*" onchange="handleOcrSelect(event)">
+
+                                        <input type="text" id="chat-input" placeholder="Ask a question about this subject..." autocomplete="off" required>
+
+                                        <button type="submit" class="btn-send" title="Send Question">
+                                            <i class="fa-solid fa-paper-plane"></i>
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
-
-                            <!-- PART B: AI Note Restructuring Generator -->
-                            <div class="materials-card part-card">
-                                <div class="part-header">
-                                    <h3><i class="fa-solid fa-sparkles"></i> 2. AI Note Restructuring Generator</h3>
-                                    <span class="part-badge bg-accent">AI Auto-Notes</span>
-                                </div>
-                                <p class="section-desc font-small">Upload classroom whiteboard photos, blackboard pictures, or scanned handwritten note images. The AI will instantly restructure it into detailed markdown study guides.</p>
-
-                                <div id="dropzone-gen" class="file-dropzone dropzone-accent" ondragover="handleDragOver(event, 'gen')" ondragleave="handleDragLeave('gen')" ondrop="handleDrop(event, 'gen')" onclick="triggerSourceSelect('gen')">
-                                    <i class="fa-solid fa-wand-magic-sparkles"></i>
-                                    <p class="dropzone-title">Upload Board Photos & Scans</p>
-                                    <p class="dropzone-subtitle">Accepts whiteboard snaps, blackboard pictures, or handwritten note images (PNG, JPG, WEBP)</p>
-                                    <input type="file" id="gen-file-input" class="hidden" accept="image/*" onchange="handleSourceSelect(event, 'gen')">
-                                </div>
-
-                                <div id="progress-gen" class="upload-progress-container hidden">
-                                    <div class="progress-bar-header">
-                                        <span id="filename-gen">messy_note.jpg</span>
-                                        <span id="percent-gen">0%</span>
-                                    </div>
-                                    <div class="progress-track">
-                                        <div id="fill-gen" class="progress-fill bg-accent-fill"></div>
-                                    </div>
-                                    <p id="status-gen" class="progress-status-text text-accent">Structuring your notes...</p>
-                                </div>
-
-                                <ul id="gen-sources-list" class="personal-sources-list">
-                                    <!-- Dynamically populated -->
-                                    <li class="sources-placeholder">No AI structured guides generated yet</li>
+                        </div>
+                        
+                        <!-- History Area -->
+                        <div id="right-panel-history" class="right-tab-panel">
+                            <div class="history-wrapper custom-scroll">
+                                <ul id="history-list" class="history-list">
+                                    <li class="history-placeholder">No query history yet</li>
                                 </ul>
                             </div>
                         </div>

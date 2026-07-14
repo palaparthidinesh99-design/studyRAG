@@ -159,6 +159,31 @@ def retrieve_merged_context(subject_id: str, query_text: str, user_id: str, n_re
     return all_chunks[:n_results]
 
 
+def call_groq(messages: list, model: str = "llama-3.3-70b-specdec") -> str:
+    groq_api_key = os.environ.get("GROQ_API_KEY")
+    if not groq_api_key:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY environment variable is not set. Please set it in Render environment settings.")
+    
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {groq_api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.2
+    }
+    
+    try:
+        res = requests.post(url, json=payload, headers=headers, timeout=60)
+        res.raise_for_status()
+        return res.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"Groq API call failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Groq completion failed: {str(e)}")
+
+
 def call_ollama(endpoint: str, payload: dict) -> requests.Response:
     base_url = os.environ.get("OLLAMA_URL", "http://localhost:11434/api")
     url = f"{base_url}/{endpoint}"
@@ -346,12 +371,8 @@ def query_text(
     if greeting_pattern.match(req.query.strip()) and len(req.query.strip()) < 40:
         try:
             prompt = f"You are a friendly AI study assistant. The user said: '{req.query}'. Respond warmly, simply, and concisely."
-            res = call_ollama("generate", {
-                "model": "gpt-oss:20b-cloud",
-                "prompt": prompt,
-                "stream": False
-            })
-            answer = res.json()["response"].strip()
+            messages = [{"role": "user", "content": prompt}]
+            answer = call_groq(messages)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
             
@@ -419,12 +440,8 @@ Question: {req.query}
 Answer:"""
     
     try:
-        res = call_ollama("generate", {
-            "model": "gpt-oss:20b-cloud",
-            "prompt": prompt,
-            "stream": False
-        })
-        answer = res.json()["response"].strip()
+        messages = [{"role": "user", "content": prompt}]
+        answer = call_groq(messages)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
         
@@ -533,12 +550,8 @@ Question: {extracted_text}
 Answer:"""
     
     try:
-        res = call_ollama("generate", {
-            "model": "gpt-oss:20b-cloud",
-            "prompt": prompt,
-            "stream": False
-        })
-        answer = res.json()["response"].strip()
+        messages = [{"role": "user", "content": prompt}]
+        answer = call_groq(messages)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
         
@@ -859,12 +872,16 @@ def index_catalogue_book_task(global_book_id: str, pdf_url: str, title: str, col
     
     # 1. Download PDF
     try:
-        response = requests.get(pdf_url, stream=True)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        response = requests.get(pdf_url, stream=True, headers=headers, timeout=30)
+        response.raise_for_status()
         with open(pdf_path, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
     except Exception as e:
-        print(f"Failed to download OpenStax book {title}: {e}")
+        print(f"Failed to download global book {title}: {e}")
         return
         
     # 2. Process PDF
@@ -916,7 +933,7 @@ def search_catalogue(query: str = ""):
         # 1. Fetch OpenStax Books
         try:
             url = "https://openstax.org/apps/cms/api/v2/pages/?type=books.Book&limit=250"
-            res = requests.get(url).json()
+            res = requests.get(url, timeout=5).json()
             matched_items = []
             for item in res.get("items", []):
                 if not query or q_lower in item.get("title", "").lower():
@@ -925,7 +942,7 @@ def search_catalogue(query: str = ""):
                     break
                     
             for item in matched_items:
-                detail = requests.get(item["meta"]["detail_url"]).json()
+                detail = requests.get(item["meta"]["detail_url"], timeout=5).json()
                 books.append({
                     "source_id": str(item["id"]),
                     "title": item["title"],
@@ -937,46 +954,31 @@ def search_catalogue(query: str = ""):
         except Exception as e:
             print(f"OpenStax search failed: {e}")
 
-        # 2. Fetch arXiv Papers
+        # 2. Fetch Open Textbook Library (UMN)
         if query:
             try:
                 import urllib.parse
-                import xml.etree.ElementTree as ET
-                safe_query = urllib.parse.quote(query)
-                arxiv_url = f"http://export.arxiv.org/api/query?search_query=all:{safe_query}&start=0&max_results=10"
-                arxiv_res = requests.get(arxiv_url).text
-                
-                root = ET.fromstring(arxiv_res)
-                ns = {"atom": "http://www.w3.org/2005/Atom"}
-                
-                for entry in root.findall("atom:entry", ns):
-                    title = entry.find("atom:title", ns).text.strip().replace("\\n", " ")
-                    summary = entry.find("atom:summary", ns).text.strip().replace("\\n", " ")
+                otl_url = f"https://open.umn.edu/opentextbooks/textbooks.json?q={urllib.parse.quote(query)}"
+                otl_res = requests.get(otl_url, timeout=5).json()
+                for item in otl_res.get("data", []):
                     pdf_url = None
-                    for link in entry.findall("atom:link", ns):
-                        if link.attrib.get("title") == "pdf":
-                            pdf_url = link.attrib.get("href")
+                    for fmt in item.get("formats", []):
+                        if fmt.get("type") == "PDF":
+                            pdf_url = fmt.get("url")
                             break
-                            
-                    if not pdf_url:
-                        id_elem = entry.find("atom:id", ns)
-                        if id_elem is not None:
-                            pdf_url = id_elem.text.replace("abs", "pdf")
-                            
+                    
                     if pdf_url:
-                        pdf_url = pdf_url.replace("http://", "https://")
-                        source_id = pdf_url.split("/")[-1]
-                        
+                        desc = item.get("description") or ""
                         books.append({
-                            "source_id": source_id,
-                            "title": title,
+                            "source_id": str(item["id"]),
+                            "title": item["title"],
                             "pdf_url": pdf_url,
                             "cover_url": None,
-                            "description": summary,
-                            "source": "arxiv"
+                            "description": desc[:300] + "..." if len(desc) > 300 else desc,
+                            "source": "opentextbooklibrary"
                         })
             except Exception as e:
-                print(f"arXiv search failed: {e}")
+                print(f"Open Textbook Library search failed: {e}")
                 
         return books
     except Exception as e:
@@ -995,6 +997,22 @@ def link_catalogue_book(
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
         
+    # Verify PDF URL is reachable and is actually a direct PDF file
+    try:
+        # Check using HEAD first (faster)
+        head = requests.head(req.pdf_url, allow_redirects=True, timeout=5)
+        content_type = head.headers.get("content-type", "").lower()
+        if "application/pdf" not in content_type:
+            # Fall back to GET if HEAD request is rejected or doesn't return headers properly
+            get_res = requests.get(req.pdf_url, stream=True, timeout=5)
+            content_type = get_res.headers.get("content-type", "").lower()
+            if "application/pdf" not in content_type:
+                raise HTTPException(status_code=400, detail="The chosen book does not point to a directly downloadable PDF file.")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=400, detail=f"Could not verify PDF download link: {str(e)}")
+
     # Check if this book is already in global_books
     existing_book = supabase.table("global_books").select("*").eq("title", req.title).execute()
     
