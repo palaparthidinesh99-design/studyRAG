@@ -3,388 +3,469 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StudyRAG — AI Retrieval-Augmented Study Companion</title>
+    <title>StudyRAG — Academic Study Workspace</title>
+    <link rel="icon" type="image/png" href="favicon.png">
     <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Lora:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Marked.js for Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+    <!-- Mermaid.js for Diagrams -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <!-- Highlight.js for VS Code Code Formatting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/vs2015.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
     <!-- Main Style Sheet -->
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=1.1">
 </head>
 <body>
-    <!-- Background blur spots for glowing ambient effect -->
-    <div class="glow-bg">
-        <div class="blob blob-1"></div>
-        <div class="blob blob-2"></div>
+
+    <!-- AUTHENTICATION LAYER -->
+    <div id="auth-layer" class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <div class="auth-logo">
+                    <img src="logo.png" alt="StudyRAG" class="logo-img-icon">
+                    <span class="logo-text">StudyRAG</span>
+                </div>
+                <p>Welcome back! Please enter your details.</p>
+            </div>
+            
+            <div class="auth-tabs">
+                <button class="auth-tab-btn active" onclick="switchAuthMode('login')">Sign In</button>
+                <button class="auth-tab-btn" onclick="switchAuthMode('register')">Sign Up</button>
+            </div>
+
+            <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+                <div class="form-group">
+                    <label for="auth-email">Email Address</label>
+                    <input type="email" id="auth-email" required placeholder="name@domain.com" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="auth-password">Password</label>
+                    <input type="password" id="auth-password" required placeholder="••••••••" autocomplete="off">
+                </div>
+                <button type="submit" id="auth-submit-btn" class="btn btn-primary full-width">Continue</button>
+            </form>
+        </div>
     </div>
 
-    <!-- MAIN APP CONTAINER -->
-    <div id="app">
-        <!-- AUTH LAYER (Login / Register) -->
-        <div id="auth-layer" class="active">
-            <div class="auth-card">
-                <div class="auth-header">
-                    <div class="logo">
-                        <i class="fa-solid fa-brain-circuit"></i>
-                        <span>Study<span>RAG</span></span>
-                    </div>
-                    <p class="subtitle">Your AI-powered context-grounded study engine</p>
-                </div>
+    <!-- MAIN DASHBOARD SPLIT WORKSPACE -->
+    <div id="dashboard-layer" class="dashboard-container hidden">
+        
+        <!-- LEFT SIDEBAR: WARM GRAY ACADEMIC SUBJECTS LIST -->
+        <aside class="app-sidebar">
+            <div class="sidebar-header-logo">
+                <img src="logo.png" alt="StudyRAG" class="logo-img-icon">
+                <span class="logo-text">StudyRAG</span>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-title">Subjects</div>
+                <ul id="subjects-list" class="subjects-list">
+                    <!-- Populated dynamically -->
+                </ul>
+            </div>
 
-                <div class="auth-tabs">
-                    <button class="auth-tab active" onclick="switchAuthTab('login')">Log In</button>
-                    <button class="auth-tab" onclick="switchAuthTab('register')">Sign Up</button>
-                </div>
+            <div class="sidebar-footer-action">
+                <button class="btn btn-new-subject" onclick="openSubjectModal()">
+                    <i class="fa-regular fa-square-plus"></i> New subject
+                </button>
+            </div>
+        </aside>
 
-                <form id="auth-form" onsubmit="handleAuthSubmit(event)">
-                    <div class="input-group">
-                        <label for="auth-email">Email Address</label>
-                        <div class="input-wrapper">
-                            <i class="fa-regular fa-envelope"></i>
-                            <input type="email" id="auth-email" required placeholder="name@domain.com">
-                        </div>
-                    </div>
-
-                    <div class="input-group">
-                        <label for="auth-password">Password</label>
-                        <div class="input-wrapper">
-                            <i class="fa-regular fa-lock"></i>
-                            <input type="password" id="auth-password" required placeholder="••••••••">
-                        </div>
-                    </div>
-
-                    <div id="auth-error" class="alert error hidden"></div>
-                    <div id="auth-success" class="alert success hidden"></div>
-
-                    <button type="submit" id="auth-submit-btn" class="btn primary full-width">
-                        <span>Continue</span>
-                        <i class="fa-solid fa-arrow-right"></i>
-                    </button>
-                </form>
+        <!-- EMPTY SUBJECT VIEW STATE -->
+        <div id="subject-empty-view" class="empty-view full-workspace">
+            <div class="empty-card">
+                <i class="fa-solid fa-folder-open empty-icon"></i>
+                <h2>No Subject Selected</h2>
+                <p>Select an academic subject from the sidebar, or create a new one to begin your study session.</p>
+                <button class="btn btn-primary" onclick="openSubjectModal()"><i class="fa-solid fa-plus"></i> Create Subject</button>
             </div>
         </div>
 
-        <!-- DASHBOARD LAYER -->
-        <div id="dashboard-layer" class="hidden">
-            <!-- SIDEBAR -->
-            <aside class="sidebar">
-                <div class="sidebar-header">
-                    <div class="logo">
-                        <i class="fa-solid fa-brain-circuit"></i>
-                        <span>Study<span>RAG</span></span>
-                    </div>
-                </div>
-
-                <!-- Subjects list -->
-                <div class="sidebar-nav">
-                    <div class="nav-section-title">
-                        <span>YOUR SUBJECTS</span>
-                        <button class="btn-icon-small" onclick="openSubjectModal()" title="Add Subject">
-                            <i class="fa-solid fa-plus"></i>
-                        </button>
-                    </div>
-                    <ul id="subjects-list" class="nav-list">
-                        <!-- Dynamically populated -->
-                        <li class="loading-placeholder">Loading subjects...</li>
-                    </ul>
-                </div>
-
-                <!-- User profile & Logout -->
-                <div class="sidebar-footer">
-                    <div class="user-info">
-                        <div class="user-avatar">
-                            <i class="fa-solid fa-user-graduate"></i>
-                        </div>
-                        <div class="user-details">
-                            <span class="user-name">Graduate Student</span>
-                            <span id="user-email-display" class="user-email">email@domain.com</span>
-                        </div>
-                    </div>
-                    <button class="btn-logout" onclick="handleLogout()" title="Log Out">
-                        <i class="fa-solid fa-right-from-bracket"></i>
-                    </button>
-                </div>
-            </aside>
-
+        <!-- ACTIVE SUBJECT VIEW STATE (CONTAINING WORKSPACE TABS) -->
+        <div id="subject-active-view" class="active-workspace-wrapper hidden">
+            
             <!-- MAIN CONTENT AREA -->
-            <main class="main-content">
-                <!-- ACTIVE SUBJECT VIEW -->
-                <div id="subject-active-view" class="hidden workspace-layout">
-                    <!-- LEFT WORKSPACE PANE -->
-                    <div class="workspace-pane left-pane">
-                        <div class="pane-tabs">
-                            <button id="left-tab-btn-catalog" class="pane-tab active" onclick="switchLeftTab('catalog')">
-                                <i class="fa-solid fa-globe"></i> Global Catalogue
-                            </button>
-                            <button id="left-tab-btn-references" class="pane-tab" onclick="switchLeftTab('references')">
-                                <i class="fa-solid fa-folder-open"></i> Reference Materials
-                            </button>
-                            <button id="left-tab-btn-notes" class="pane-tab" onclick="switchLeftTab('notes')">
-                                <i class="fa-solid fa-sparkles"></i> AI Study Guides
-                            </button>
-                        </div>
-                        
-                        <div class="pane-body">
-                            <!-- CATALOG TAB -->
-                            <div id="left-tab-catalog" class="left-tab-panel active">
-                                <div class="catalog-card">
-                                    <h3><i class="fa-solid fa-globe"></i> Global Textbook Catalogue</h3>
-                                    <p class="section-desc">Search and link open-access college textbooks from OpenStax and Open Textbook Library.</p>
-                                    
-                                    <div class="openstax-search-bar-wrapper">
-                                        <div class="search-input-container">
-                                            <i class="fa-solid fa-magnifying-glass"></i>
-                                            <input type="text" id="openstax-search-input" placeholder="Search topics (e.g. Calculus, Physics, Economics)..." onkeyup="handleOpenStaxSearchKeyup(event)">
-                                        </div>
-                                        <button class="btn primary" onclick="triggerOpenStaxSearch()">
-                                            <i class="fa-solid fa-search"></i> Search
-                                        </button>
-                                    </div>
-                                    
-                                    <ul id="global-books-list" class="materials-list custom-scroll" style="max-height: calc(100vh - 250px);">
-                                        <li class="sources-placeholder">Type in the search bar above to search books...</li>
-                                    </ul>
-                                </div>
-                            </div>
-                            
-                            <!-- REFERENCES TAB -->
-                            <div id="left-tab-references" class="left-tab-panel">
-                                <div class="materials-card">
-                                    <div class="part-header">
-                                        <h3><i class="fa-solid fa-layer-group"></i> Grounding Reference Materials</h3>
-                                        <span class="part-badge bg-primary">RAG Context</span>
-                                    </div>
-                                    <p class="section-desc">Upload reference books, notes of seniors, or papers. Chunks are embedded and indexed for chat searches.</p>
-
-                                    <div id="dropzone-ref" class="file-dropzone" ondragover="handleDragOver(event, 'ref')" ondragleave="handleDragLeave('ref')" ondrop="handleDrop(event, 'ref')" onclick="triggerSourceSelect('ref')">
-                                        <i class="fa-solid fa-cloud-arrow-up"></i>
-                                        <p class="dropzone-title">Upload RAG Reference Files</p>
-                                        <p class="dropzone-subtitle">Accepts PDF reference books or notes</p>
-                                        <input type="file" id="ref-file-input" class="hidden" accept="application/pdf,image/*" onchange="handleSourceSelect(event, 'ref')">
-                                    </div>
-
-                                    <div id="progress-ref" class="upload-progress-container hidden">
-                                        <div class="progress-bar-header">
-                                            <span id="filename-ref">note.pdf</span>
-                                            <span id="percent-ref">0%</span>
-                                        </div>
-                                        <div class="progress-track">
-                                            <div id="fill-ref" class="progress-fill"></div>
-                                        </div>
-                                        <p id="status-ref" class="progress-status-text">Uploading raw files...</p>
-                                    </div>
-
-                                    <ul id="ref-sources-list" class="personal-sources-list custom-scroll" style="max-height: calc(100vh - 450px);">
-                                        <li class="sources-placeholder">No reference sources uploaded yet</li>
-                                    </ul>
-                                </div>
-                            </div>
-                            
-                            <!-- AI NOTES TAB -->
-                            <div id="left-tab-notes" class="left-tab-panel">
-                                <!-- List View / Note Upload -->
-                                <div id="notes-list-view">
-                                    <div class="materials-card">
-                                        <div class="part-header">
-                                            <h3><i class="fa-solid fa-sparkles"></i> AI Note Restructuring</h3>
-                                            <span class="part-badge bg-accent">AI Auto-Notes</span>
-                                        </div>
-                                        <p class="section-desc">Upload whiteboard scans or board photos. The AI will instantly restructure it into markdown study guides.</p>
-
-                                        <div id="dropzone-gen" class="file-dropzone dropzone-accent" ondragover="handleDragOver(event, 'gen')" ondragleave="handleDragLeave('gen')" ondrop="handleDrop(event, 'gen')" onclick="triggerSourceSelect('gen')">
-                                            <i class="fa-solid fa-wand-magic-sparkles"></i>
-                                            <p class="dropzone-title">Upload Board Photos & Scans</p>
-                                            <p class="dropzone-subtitle">Whiteboard snaps, blackboard pictures, or handwritten note images</p>
-                                            <input type="file" id="gen-file-input" class="hidden" accept="image/*" onchange="handleSourceSelect(event, 'gen')">
-                                        </div>
-
-                                        <div id="progress-gen" class="upload-progress-container hidden">
-                                            <div class="progress-bar-header">
-                                                <span id="filename-gen">messy_note.jpg</span>
-                                                <span id="percent-gen">0%</span>
-                                            </div>
-                                            <div class="progress-track">
-                                                <div id="fill-gen" class="progress-fill bg-accent-fill"></div>
-                                            </div>
-                                            <p id="status-gen" class="progress-status-text text-accent">Structuring your notes...</p>
-                                        </div>
-
-                                        <ul id="gen-sources-list" class="personal-sources-list custom-scroll" style="max-height: calc(100vh - 450px);">
-                                            <li class="sources-placeholder">No AI structured guides generated yet</li>
-                                        </ul>
-                                    </div>
-                                </div>
-                                
-                                <!-- Integrated Note Reader View (in-pane!) -->
-                                <div id="notes-reader-view" class="hidden">
-                                    <div class="reader-header-pane">
-                                        <button class="btn secondary btn-small" onclick="closeReaderInPane()">
-                                            <i class="fa-solid fa-arrow-left"></i> Back to Guides
-                                        </button>
-                                        <div class="reader-actions">
-                                            <button class="btn-icon-small" onclick="copyReaderContent()" title="Copy to Clipboard">
-                                                <i class="fa-regular fa-copy"></i> Copy
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <h2 id="pane-reader-title" class="reader-title">Guide Title</h2>
-                                    <div id="pane-reader-content" class="reader-content custom-scroll">
-                                        <!-- Markdown Renders here -->
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+            <section id="conversation-pane" class="conversation-pane">
+                
+                <!-- TOP HEADER TABS BAR -->
+                <header class="workspace-header">
+                    <div class="workspace-tabs">
+                        <button id="tab-btn-notes" class="tab-btn active" onclick="switchWorkspaceTab('notes')">Notes</button>
+                        <button id="tab-btn-resources" class="tab-btn" onclick="switchWorkspaceTab('resources')">Resources</button>
+                        <button id="tab-btn-chatbot" class="tab-btn" onclick="switchWorkspaceTab('chatbot')">Chatbot</button>
                     </div>
                     
-                    <!-- RIGHT WORKSPACE PANE -->
-                    <div class="workspace-pane right-pane">
-                        <div class="pane-header-bar">
-                            <div class="subject-title-wrapper">
-                                <h2 id="active-subject-name-display" class="active-subject-header">Subject Title</h2>
-                                <div class="subject-stats">
-                                    <span id="stat-books"><i class="fa-solid fa-book"></i> 0 Linked</span>
-                                    <span id="stat-sources"><i class="fa-solid fa-file"></i> 0 Files</span>
-                                </div>
-                            </div>
-                            
-                            <!-- Chat/History Panel Toggles inside right pane -->
-                            <div class="right-pane-toggles">
-                                <button id="right-toggle-chat" class="toggle-btn active" onclick="switchRightPanel('chat')">
-                                    <i class="fa-regular fa-comment-dots"></i> Chat
-                                </button>
-                                <button id="right-toggle-history" class="toggle-btn" onclick="switchRightPanel('history')">
-                                    <i class="fa-solid fa-clock-rotate-left"></i> History
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <!-- Chat Feed Area -->
-                        <div id="right-panel-chat" class="right-tab-panel active">
-                            <div class="chat-wrapper">
-                                <div id="chat-feed" class="chat-feed custom-scroll">
-                                    <div class="welcome-chat-message">
-                                        <div class="welcome-icon">
-                                            <i class="fa-solid fa-feather-pointed"></i>
-                                        </div>
-                                        <h3>Ask Your Context-Grounded Question</h3>
-                                        <p>I will search your uploaded notes and linked textbooks to generate a formatted, cited answer.</p>
-                                        <div class="chat-quick-tags">
-                                            <span>Context-grounded</span>
-                                            <span>No hallucinations</span>
-                                            <span>Page-level citations</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="chat-input-area">
-                                    <div id="ocr-preview-container" class="hidden">
-                                        <div class="ocr-preview">
-                                            <i class="fa-regular fa-image"></i>
-                                            <span id="ocr-preview-filename">image.jpg</span>
-                                            <button class="btn-remove-preview" onclick="cancelOcrUpload()">
-                                                <i class="fa-solid fa-xmark"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <form id="chat-input-form" onsubmit="handleQuerySubmit(event)">
-                                        <button type="button" class="btn-input-action" onclick="triggerOcrSelect()" title="Ask with Photo (OCR)">
-                                            <i class="fa-regular fa-camera"></i>
-                                        </button>
-                                        <input type="file" id="ocr-file-input" class="hidden" accept="image/*" onchange="handleOcrSelect(event)">
-
-                                        <input type="text" id="chat-input" placeholder="Ask a question about this subject..." autocomplete="off" required>
-
-                                        <button type="submit" class="btn-send" title="Send Question">
-                                            <i class="fa-solid fa-paper-plane"></i>
-                                        </button>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- History Area -->
-                        <div id="right-panel-history" class="right-tab-panel">
-                            <div class="history-wrapper custom-scroll">
-                                <ul id="history-list" class="history-list">
-                                    <li class="history-placeholder">No query history yet</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- EMPTY STATE VIEW -->
-                <div id="subject-empty-view" class="empty-state-view">
-                    <div class="empty-card">
-                        <div class="glowing-logo">
-                            <i class="fa-solid fa-brain-circuit"></i>
-                        </div>
-                        <h2>Welcome to StudyRAG</h2>
-                        <p>Select an academic subject from the sidebar, or create a new one to link global textbooks and upload classroom note photos.</p>
-                        <button class="btn primary" onclick="openSubjectModal()">
-                            <i class="fa-solid fa-plus"></i>
-                            <span>Create Your First Subject</span>
+                    <div class="workspace-user-card">
+                        <span id="user-email-display-nav">student@studyrag.com</span>
+                        <button class="btn-logout" onclick="handleLogout()" title="Log Out">
+                            <i class="fa-solid fa-right-from-bracket"></i>
                         </button>
                     </div>
+                </header>
+
+                <!-- TAB VIEW 1: NOTES (Inline OCR Image Upload + All Notes Grid) -->
+                <div id="tab-pane-notes" class="tab-pane active">
+                    <div class="tab-content-container">
+                        
+                        <!-- UPPER SECTION: INLINE OCR NOTES GENERATION UPLOAD -->
+                        <div class="notes-generator-section">
+                            <h3>Generate In-Depth AI Study Guide</h3>
+                            <p class="section-desc">Upload a PDF or image of your handwritten notes or board photos to generate detailed, structured study guides.</p>
+                            
+                            <form id="notes-generator-inline-form" onsubmit="handleInlineNotesGenerate(event)">
+                                <div class="inline-upload-row">
+                                    <div class="inline-file-box">
+                                        <input type="file" id="inline-ocr-file-input" required accept="image/*,application/pdf" class="hidden-input" onchange="updateInlineOcrLabel(event)">
+                                        <label for="inline-ocr-file-input" id="inline-ocr-label" class="inline-ocr-label-btn">
+                                            <i class="fa-solid fa-plus"></i> <span>Select PDF or Image of Notes...</span>
+                                        </label>
+                                    </div>
+                                    <button type="submit" id="btn-generate-inline-guide" class="btn btn-primary orange-btn">
+                                        <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Guide
+                                    </button>
+                                </div>
+                                <div id="notes-inline-status" class="status-alert hidden"></div>
+                            </form>
+                        </div>
+
+                        <!-- LOWER SECTION: ALL NOTES GRID -->
+                        <div class="notes-grid-section">
+                            <div class="notes-header-bar">
+                                <span id="notes-count-label" class="notes-count-label">0 notes</span>
+                            </div>
+
+
+                            <!-- Notes grid -->
+                            <ul id="study-notes-list" class="notes-grid">
+                                <!-- Populated dynamically -->
+                            </ul>
+                        </div>
+
+                    </div>
                 </div>
-            </main>
+
+                <!-- TAB VIEW 2: ADD RESOURCES (Divided horizontally: Upper half user uploads, Lower half textbooks) -->
+                <div id="tab-pane-resources" class="tab-pane">
+                    <div class="tab-content-container scrollable-pane-content">
+                        
+                        <!-- UPPER HALVES: USER UPLOADS -->
+                        <div class="resources-half-section">
+                            <div class="half-section-header">
+                                <h3>User Uploads</h3>
+                            </div>
+                            
+                            <div class="uploads-split-grid">
+                                <!-- Left block: PDF Reference Documents -->
+                                <div class="upload-block-card">
+                                    <div class="block-card-header">
+                                        <h4>PDF Reference Documents</h4>
+                                        <button class="btn btn-secondary btn-sm" onclick="openUploadPdfModal()">
+                                            <i class="fa-solid fa-plus"></i> Upload PDF
+                                        </button>
+                                    </div>
+                                    <ul id="personal-uploads-pdf-list" class="horizontal-scroller">
+                                        <!-- Populated dynamically -->
+                                    </ul>
+                                </div>
+
+                                <!-- Right block: Scanned Notes & Board Images -->
+                                <div class="upload-block-card">
+                                    <div class="block-card-header">
+                                        <h4>Scanned Notes & Images</h4>
+                                        <button class="btn btn-secondary btn-sm" onclick="openUploadImageModal()">
+                                            <i class="fa-solid fa-plus"></i> Upload Image
+                                        </button>
+                                    </div>
+                                    <ul id="personal-uploads-image-list" class="horizontal-scroller">
+                                        <!-- Populated dynamically -->
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- LOWER HALVES: TEXTBOOK CATALOG -->
+                        <div class="resources-half-section margin-top-lg">
+                            <div class="half-section-header">
+                                <h3>Textbook Catalog</h3>
+                                <button class="btn btn-primary orange-btn btn-sm" onclick="openCatalogModal()">
+                                    <i class="fa-solid fa-plus"></i> Add Textbook
+                                </button>
+                            </div>
+                            
+                            <div class="books-split-grid">
+                                <div class="books-block-card">
+                                    <div class="block-card-header">
+                                        <h4>Linked Textbooks (<span id="badge-textbooks-count">0</span>)</h4>
+                                    </div>
+                                    <ul id="linked-textbooks-list" class="horizontal-scroller">
+                                        <!-- Populated dynamically -->
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- TAB VIEW 3: CHATBOT TUTOR FEED -->
+                <div id="tab-pane-chatbot" class="tab-pane">
+                    <div class="chatbot-split-container">
+                        <!-- Left Chat History Sidebar (ChatGPT style) -->
+                        <div class="chatbot-history-sidebar">
+                            <button type="button" class="btn-new-chat" onclick="startNewChat()">
+                                <i class="fa-solid fa-plus"></i> New Chat
+                            </button>
+                            <div class="history-sidebar-title">Recent Questions</div>
+                            <ul id="chatbot-history-list" class="history-list">
+                                <!-- Populated dynamically -->
+                            </ul>
+                        </div>
+                        
+                        <!-- Right Active Chat Area -->
+                        <div class="chatbot-active-area">
+                            <div id="chat-feed" class="chat-feed">
+                                <div class="welcome-chat-message">
+                                    <i class="fa-solid fa-graduation-cap"></i>
+                                    <h3>Ask Your Tutor Anything</h3>
+                                    <p>Ask a question about your books or notes. Cited passages can be verified side-by-side in real-time.</p>
+                                    <div class="example-chips">
+                                        <button type="button" class="chip-btn" onclick="applyExampleQuestion('Explain reflective equilibrium')">Explain reflective equilibrium</button>
+                                        <button type="button" class="chip-btn" onclick="applyExampleQuestion('Summarize chapter 2')">Summarize chapter 2</button>
+                                        <button type="button" class="chip-btn" onclick="applyExampleQuestion('What is Python?')">What is Python?</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="conversation-input-bar">
+                                <div class="chat-filter-strip">
+                                    <span class="filter-label">
+                                        <i class="fa-solid fa-book-open-reader"></i>
+                                        Search references
+                                    </span>
+                                    <div class="filter-select-wrap">
+                                        <select id="chat-source-filter" class="filter-select">
+                                            <option value="all">All — Books &amp; Notes</option>
+                                            <option value="books">Textbooks only</option>
+                                            <option value="notes">Notes &amp; Photos only</option>
+                                        </select>
+                                        <i class="fa-solid fa-chevron-down filter-caret"></i>
+                                    </div>
+                                </div>
+                                <form id="chat-input-form" onsubmit="handleSendChat(event)">
+                                    <input type="text" id="chat-input" required placeholder="Ask a study question..." autocomplete="off">
+                                    
+                                    <div class="input-actions-strip">
+                                        <input type="file" id="input-camera-file" accept="image/*" class="hidden-input" onchange="handleCameraPhotoSelected(event)" autocomplete="off">
+                                        <label for="input-camera-file" class="action-icon-btn" title="Ask with Note Photo (OCR)">
+                                            <i class="fa-solid fa-camera"></i>
+                                        </label>
+                                        <button type="button" class="action-icon-btn" onclick="triggerVoiceInputIndicator()" title="Voice Dictation Question">
+                                            <i class="fa-solid fa-microphone"></i>
+                                        </button>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary send-btn"><i class="fa-solid fa-arrow-up"></i></button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+
         </div>
     </div>
 
-    <!-- SUBJECT CREATION MODAL -->
-    <div id="subject-modal" class="modal-layer hidden">
+    <!-- SUBJECT MODAL -->
+    <div id="subject-modal" class="modal hidden">
         <div class="modal-backdrop" onclick="closeSubjectModal()"></div>
-        <div class="modal-card">
+        <div class="modal-content">
             <div class="modal-header">
                 <h3>Create New Subject</h3>
-                <button class="btn-close-modal" onclick="closeSubjectModal()"><i class="fa-solid fa-xmark"></i></button>
+                <button class="btn-close" onclick="closeSubjectModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <form id="create-subject-form" onsubmit="handleCreateSubject(event)">
-                <div class="input-group">
+                <div class="form-group">
                     <label for="new-subject-name">Subject Name</label>
-                    <div class="input-wrapper">
-                        <i class="fa-solid fa-signature"></i>
-                        <input type="text" id="new-subject-name" required placeholder="e.g. Ancient Greek Philosophy">
+                    <input type="text" id="new-subject-name" required placeholder="e.g. Computer Science" autocomplete="off">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeSubjectModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Subject</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TEXTBOOK CATALOG SEARCH MODAL -->
+    <div id="catalog-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeCatalogModal()"></div>
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3>Search Textbook Catalog</h3>
+                <button class="btn-close" onclick="closeCatalogModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body search-catalog-modal-body">
+                <div class="search-bar">
+                    <input type="text" id="openstax-search-input" onkeyup="handleOpenStaxSearchKeyup(event)" placeholder="Search books by title, author, or subject..." autocomplete="off">
+                    <button class="btn btn-primary" onclick="triggerOpenStaxSearch()">Search</button>
+                </div>
+                <ul id="global-books-list" class="books-grid modal-books-grid">
+                    <li class="placeholder-item">Search across OpenStax, LibreTexts, Open Textbook Library, DOAB &amp; Project Gutenberg — results sorted by relevance.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- UPLOAD PDF REFERENCE MODAL -->
+    <div id="upload-pdf-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeUploadPdfModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Upload PDF Document</h3>
+                <button class="btn-close" onclick="closeUploadPdfModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="upload-pdf-form" onsubmit="handlePdfModalSubmit(event)">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="modal-pdf-input">Select PDF File</label>
+                        <input type="file" id="modal-pdf-input" required accept=".pdf" autocomplete="off">
+                    </div>
+                    <div id="modal-pdf-status" class="status-alert hidden"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeUploadPdfModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Upload PDF</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- UPLOAD SCANNED IMAGE MODAL -->
+    <div id="upload-image-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeUploadImageModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Upload Scanned Notes or Board Image</h3>
+                <button class="btn-close" onclick="closeUploadImageModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="upload-image-form" onsubmit="handleImageModalSubmit(event)">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="modal-image-input">Select Image File</label>
+                        <input type="file" id="modal-image-input" required accept="image/*" autocomplete="off">
+                    </div>
+                    <div id="modal-image-status" class="status-alert hidden"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeUploadImageModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Upload Image</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- CHOOSE TOPICS FOR NOTES MODAL -->
+    <div id="notes-topics-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeTopicsModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Select Study Guide Topics</h3>
+                <button class="btn-close" onclick="closeTopicsModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="notes-topics-form" onsubmit="submitNotesTopics(event)">
+                <div class="modal-body">
+                    <p style="margin-bottom:12px; font-size:0.9rem; color:var(--text-workspace-muted)">
+                        The AI analyzed your document and suggested these topics. Select the ones you want explained in depth, or add your own custom topics below.
+                    </p>
+                    
+                    <div class="topics-checklist-container" id="topics-checklist" style="max-height:220px; overflow-y:auto; padding:8px; border:1px solid var(--border-color-light); border-radius:var(--radius-md); background:rgba(0,0,0,0.1); display:flex; flex-direction:column; gap:8px;">
+                        <!-- Populated dynamically -->
+                    </div>
+                    
+                    <div class="add-custom-topic-row" style="margin-top:16px; display:flex; gap:8px;">
+                        <input type="text" id="custom-topic-input" placeholder="Add custom topic (e.g. Chemical formulas...)" autocomplete="off" style="flex:1; padding:8px 12px; border-radius:var(--radius-md); border:1px solid var(--border-color-light); background:var(--bg-dark-sidebar); color:var(--text-workspace-main); outline:none;">
+                        <button type="button" class="btn btn-secondary" onclick="addCustomTopic()" style="padding:8px 14px; border-radius:var(--radius-md); display:flex; align-items:center; justify-content:center;"><i class="fa-solid fa-plus"></i></button>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn secondary" onclick="closeSubjectModal()">Cancel</button>
-                    <button type="submit" class="btn primary">
-                        <span>Create Subject</span>
-                        <i class="fa-solid fa-circle-check"></i>
+                    <button type="button" class="btn btn-secondary" onclick="closeTopicsModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary orange-btn" id="btn-start-notes-gen">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Study Guide
                     </button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- STUDY NOTE DETAILS MODAL READER -->
-    <div id="reader-modal" class="modal-layer hidden">
-        <div class="modal-backdrop" onclick="closeReaderModal()"></div>
-        <div class="modal-card reader-card">
+    <!-- FLOATING POPUP OVERLAY SOURCE VIEWER MODAL (POPUP WINDOW) -->
+    <div id="source-viewer-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeSourceViewer()"></div>
+        <div class="modal-content extra-large">
             <div class="modal-header">
-                <h3 id="reader-title">AI Study Guide</h3>
-                <div class="reader-actions">
-                    <button class="btn-icon-small" onclick="copyReaderContent()" title="Copy to Clipboard">
-                        <i class="fa-regular fa-copy"></i>
-                    </button>
-                    <button class="btn-close-modal" onclick="closeReaderModal()">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
+                <div class="viewer-breadcrumbs">
+                    <i class="fa-regular fa-folder-open"></i>
+                    <span id="viewer-breadcrumb-path">Library > Reference Note</span>
                 </div>
+                <button class="btn-close" onclick="closeSourceViewer()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="reader-body">
-                <div id="reader-content" class="reader-content">
-                    <!-- Note Markdown Content Renders Here -->
+            <div class="modal-body modal-viewer-body">
+                <div class="viewer-content">
+                    
+                    <!-- 1. PDF iframe viewer -->
+                    <div id="viewer-pdf-frame" class="viewer-frame-inner hidden" style="position: relative;">
+                        <div id="pdf-viewer-loading" class="pdf-viewer-loading" style="position: absolute; top:0; left:0; width:100%; height:100%; background:var(--bg-light-workspace); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; color:var(--text-workspace-muted); font-size:1.1rem; z-index:5;">
+                            <i class="fa-solid fa-spinner fa-spin fa-2x" style="color:var(--orange-accent);"></i>
+                            <span>Loading reference document...</span>
+                        </div>
+                        <iframe id="pdf-iframe-element" src="" width="100%" height="100%"></iframe>
+                    </div>
+
+                    <!-- 2. Zoomable/Pannable Image viewer -->
+                    <div id="viewer-image-frame" class="viewer-frame-inner image-viewer-frame hidden">
+                        <div class="image-zoom-controls">
+                            <button onclick="zoomImage(1.2)"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+                            <button onclick="zoomImage(0.8)"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+                            <button onclick="resetImageZoom()"><i class="fa-solid fa-rotate-left"></i></button>
+                        </div>
+                        <div class="image-viewport" id="image-viewport">
+                            <img id="image-element" src="" alt="Source note preview" draggable="false">
+                        </div>
+                    </div>
+
+                    <!-- 3. Study Guide Markdown Notes reader -->
+                    <div id="viewer-notes-frame" class="viewer-frame-inner custom-markdown reader-content hidden">
+                        <!-- Parsed content -->
+                    </div>
+
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- APP SCRIPT -->
-    <script src="app.js"></script>
+    <!-- Toast notifications container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Custom Confirmation Modal -->
+    <div id="custom-confirm-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content custom-confirm-content">
+            <div class="modal-header">
+                <h3>Confirm Action</h3>
+            </div>
+            <div class="modal-body">
+                <p id="custom-confirm-message" style="margin: 0 0 20px 0; line-height: 1.5; color: var(--text-workspace-main); font-size: 0.95rem;"></p>
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button id="custom-confirm-no" class="btn btn-secondary" style="padding: 8px 16px;">Cancel</button>
+                    <button id="custom-confirm-yes" class="btn btn-danger" style="padding: 8px 16px; background-color: #ef4444; border-color: #ef4444;">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main JS Application -->
+    <script src="app.js?v=1.1"></script>
 </body>
 </html>

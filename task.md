@@ -1,0 +1,25 @@
+# Tasks — StudyRAG Color, Horizontally Scrolling Feeds & PDF Notes Redesign
+
+- [x] Redesign index.html visual layout and overlay popups
+    - [x] Create separate modal upload views for PDF documents and image files
+    - [x] Integrate horizontal scroll container grids (scrollers like YouTube feeds) inside Add resources tab
+    - [x] Add inline note guide generator box supporting both PDF and image note files
+    - [x] Setup source viewer overlay modal popups (#source-viewer-modal)
+- [x] Re-theme style.css to match ChatGPT's dark palette exactly
+    - [x] Set soft dark main background `#212121`
+    - [x] Set dark sidebar background `#171717`
+    - [x] Set selected state card gray `#2f2f2f`
+    - [x] Set off-white/gray text styling `#ececec`
+    - [x] Hide raw file inputs with `.hidden-input` classes
+    - [x] Build horizontal scrolling slider layouts (`.horizontal-scroller`, `.library-item-card`)
+- [x] Implement app.js event rules
+    - [x] Wire PDF and Scanned Image uploads to separate lists and modal triggers
+    - [x] Fix JavaScript exception in `renderLibraryUploads` by checking for `badge-uploads-count` null safety (restores notes listing)
+    - [x] Setup inline notes guide OCR upload generation with PDF format checks
+    - [x] Bind note cards and chatbot citations to trigger source viewer popup modal
+- [x] Update main.py auto-heal file fallback search
+    - [x] Perform dynamically queried searches for OpenStax or Open Textbook Library book detail records if a requested PDF was deleted or not found locally
+    - [x] Auto-download book to disk on request
+- [x] Verify execution
+    - [x] Compile main.py
+    - [x] Run test_flow.py locally

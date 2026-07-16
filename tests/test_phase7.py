@@ -2,7 +2,7 @@ import os
 import uuid
 import requests
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "https://studyrag-3s4g.onrender.com"
 
 def run_test():
     # 1. Register a fresh test user
