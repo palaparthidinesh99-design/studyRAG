@@ -56,6 +56,7 @@ except Exception as e:
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "https://ollama.com/api")
 OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY")
 
 # Cloudinary Configuration
 import cloudinary

@@ -131,8 +131,7 @@ def get_source_file(
     source_id: str,
     user_id: str = Depends(get_current_user)
 ):
-    from fastapi.responses import StreamingResponse, Response
-    import requests as _requests
+    from fastapi.responses import RedirectResponse
 
     subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
     if not subject.data:
@@ -143,66 +142,26 @@ def get_source_file(
         raise HTTPException(status_code=404, detail="Source not found")
         
     storage_path = source.data[0]["storage_path"]
-    source_title = source.data[0].get("title", "file")
     
     if storage_path.startswith("processing:") or storage_path.startswith("failed:"):
         raise HTTPException(status_code=202, detail="File is still being processed")
     
-    # --- Determine content type from source type and title ---
-    source_type = source.data[0].get("source_type", "")
-    
-    if source_type == "text_pdf" or source_title.lower().endswith(".pdf"):
-        content_type = "application/pdf"
-        file_ext = ".pdf"
-    elif "png" in source_title.lower():
-        content_type = "image/png"
-        file_ext = ".png"
-    elif "webp" in source_title.lower():
-        content_type = "image/webp"
-        file_ext = ".webp"
-    else:
-        content_type = "image/jpeg"
-        file_ext = ".jpg"
-
-    # --- Proxy the file from Cloudinary (or any HTTP URL) through our server ---
-    # This avoids X-Frame-Options and CORS errors in the browser iframe
+    # 1. Direct Cloudinary or HTTP redirect
     if storage_path.startswith("http"):
-        try:
-            upstream = _requests.get(storage_path, timeout=60, stream=True)
-            upstream.raise_for_status()
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Failed to fetch file from storage: {str(e)}")
+        return RedirectResponse(url=storage_path)
 
-        safe_filename = os.path.basename(source_title) or f"file{file_ext}"
-        
-        def iter_upstream():
-            for chunk in upstream.iter_content(chunk_size=65536):
-                if chunk:
-                    yield chunk
-
-        return StreamingResponse(
-            iter_upstream(),
-            media_type=content_type,
-            headers={
-                "Content-Disposition": f"inline; filename=\"{safe_filename}\"",
-                "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "public, max-age=3600",
-            }
-        )
-
-    # --- Legacy local file fallback ---
-    file_ext_local = os.path.splitext(storage_path)[1].lower()
-    local_cache_dir = "cache/uploads"
-    os.makedirs(local_cache_dir, exist_ok=True)
-    local_path = os.path.join(local_cache_dir, f"{source_id}{file_ext_local}")
-    
+    # 2. Supabase Storage: redirect to a secure signed URL
     try:
-        if not os.path.exists(local_path):
-            from backend.config import download_file_bytes
-            file_bytes = download_file_bytes(storage_path)
-            with open(local_path, "wb") as f:
-                f.write(file_bytes)
-        return FileResponse(local_path, media_type=content_type)
+        res = supabase.storage.from_("user-uploads").create_signed_url(storage_path, expires_in=3600)
+        signed_url = res.get("signedURL") or res.get("signed_url")
+        if signed_url:
+            return RedirectResponse(url=signed_url)
+            
+        pub_url = supabase.storage.from_("user-uploads").get_public_url(storage_path)
+        return RedirectResponse(url=pub_url)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch file: {str(e)}")
+        print(f"Failed to generate signed redirect URL: {e}")
+        from backend.config import SUPABASE_URL
+        fallback_url = f"{SUPABASE_URL}/storage/v1/object/public/user-uploads/{storage_path}"
+        return RedirectResponse(url=fallback_url)
 

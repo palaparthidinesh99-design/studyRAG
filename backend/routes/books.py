@@ -302,7 +302,7 @@ def search_catalogue(query: str = ""):
             
             os_results = fut_os.result()
             try:
-                lt_results = fut_lt.result(timeout=3)
+                lt_results = fut_lt.result(timeout=1.2)
             except Exception:
                 lt_results = []
         
@@ -316,15 +316,15 @@ def search_catalogue(query: str = ""):
                 fut_doab = slow_executor.submit(fetch_doab)
                 
                 try:
-                    all_raw += fut_otl.result(timeout=3)
+                    all_raw += fut_otl.result(timeout=2.0)
                 except Exception:
                     pass
                 try:
-                    all_raw += fut_gut.result(timeout=3)
+                    all_raw += fut_gut.result(timeout=2.0)
                 except Exception:
                     pass
                 try:
-                    all_raw += fut_doab.result(timeout=3)
+                    all_raw += fut_doab.result(timeout=2.0)
                 except Exception:
                     pass
 

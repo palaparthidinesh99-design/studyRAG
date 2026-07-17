@@ -4,7 +4,7 @@ import io
 from PIL import Image
 from fastapi import HTTPException
 from typing import List, Optional
-from backend.config import GROQ_API_KEY, OLLAMA_URL, OLLAMA_API_KEY
+from backend.config import GROQ_API_KEY, OLLAMA_URL, OLLAMA_API_KEY, CEREBRAS_API_KEY
 
 def call_ollama(endpoint: str, payload: dict) -> requests.Response:
     url = f"{OLLAMA_URL}/{endpoint}"
@@ -38,6 +38,34 @@ def call_ollama_fallback(messages: List[dict], max_tokens: int = 4096) -> str:
         raise e
 
 def call_groq(messages: List[dict], model: str = "llama-3.1-8b-instant", max_tokens: int = 4096, temperature: float = 0.2, timeout: int = 12) -> str:
+    # 1. Try Cerebras first if key is configured
+    if CEREBRAS_API_KEY:
+        try:
+            cerebras_model = "llama3.1-70b" if "70b" in model else "llama3.1-8b"
+            url = "https://api.cerebras.ai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {CEREBRAS_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            # Deep copy messages list to avoid side effects
+            messages_copy = []
+            for m in messages:
+                content = m.get("content")
+                if isinstance(content, str) and len(content) > 12000:
+                    content = content[:12000] + "\n...[truncated]"
+                messages_copy.append({"role": m.get("role"), "content": content})
+
+            payload = {
+                "model": cerebras_model,
+                "messages": messages_copy,
+                "max_tokens": max_tokens
+            }
+            res = requests.post(url, json=payload, headers=headers, timeout=timeout)
+            res.raise_for_status()
+            return res.json()["choices"][0]["message"]["content"]
+        except Exception as cerebras_err:
+            print(f"Cerebras call failed: {cerebras_err}. Falling back to Groq.")
+
     if not GROQ_API_KEY:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured. Please set it in your environment.")
     

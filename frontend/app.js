@@ -1736,14 +1736,17 @@ async function openGuideSourceViewer(sourceId, title) {
         // Find if there is a matching source in state to bind citation links to
         let rawDocName = title.replace(/^AI Notes\s*-\s*/i, "").trim().toLowerCase();
 
-        let matchingSource = state.personalSources.find(s => {
-            if (s.source_type === "generated_note" || s.source_type === "saved_note") return false;
-            let sTitle = s.title.toLowerCase();
-            return sTitle.includes(rawDocName) || rawDocName.includes(sTitle.replace(/\.[^/.]+$/, ""));
-        });
+        let matchingSource = null;
+        if (Array.isArray(state.personalSources)) {
+            matchingSource = state.personalSources.find(s => {
+                if (s.source_type === "generated_note" || s.source_type === "saved_note") return false;
+                let sTitle = s.title.toLowerCase();
+                return sTitle.includes(rawDocName) || rawDocName.includes(sTitle.replace(/\.[^/.]+$/, ""));
+            });
+        }
 
         let matchingBook = null;
-        if (!matchingSource) {
+        if (!matchingSource && Array.isArray(state.linkedBookIds)) {
             matchingBook = state.linkedBookIds.find(b => {
                 let bTitle = b.title.toLowerCase();
                 return bTitle.includes(rawDocName) || rawDocName.includes(bTitle);
