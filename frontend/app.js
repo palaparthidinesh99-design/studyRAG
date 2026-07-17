@@ -1759,6 +1759,9 @@ function openSourceViewerPane(breadcrumbText) {
 
 async function openTextbookInNewTab(bookId, page = 1) {
     page = parseInt(page) || 1;
+    const proceed = confirm("This book is hosted on an external open-access library. Opening it may display it inline or download the file depending on the source. Do you want to proceed?");
+    if (!proceed) return;
+    
     const url = `${BASE_URL}/subjects/${state.activeSubjectId}/books/${bookId}/view?token=${encodeURIComponent(state.token)}#page=${page}`;
     window.open(url, "_blank", "noopener,noreferrer");
 }

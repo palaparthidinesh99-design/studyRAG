@@ -227,6 +227,10 @@ def index_catalogue_book_task(global_book_id: str, pdf_url: str, title: str, col
                 print(f"Error parsing PDF outlines: {e}")
                 chunks = fallback_process_pdf(file_path, title)
             
+            # Explicit garbage collection to release PyPDF memory structures early
+            import gc
+            gc.collect()
+            
         # 3. Index in Chroma DB
         if chunks:
             try:
@@ -253,6 +257,12 @@ def index_catalogue_book_task(global_book_id: str, pdf_url: str, title: str, col
                         metadatas=metadatas[i:i+batch_size]
                     )
                 print(f"Indexed book {title} successfully: {len(chunks)} chunks.")
+                # Free memory references immediately
+                chunks = None
+                documents = None
+                ids = None
+                metadatas = None
+                gc.collect()
             except Exception as e:
                 print(f"Chroma DB indexing error for book: {e}")
     except Exception as e:

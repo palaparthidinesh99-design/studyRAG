@@ -362,6 +362,13 @@ def resolve_doab_pdf(url: str) -> str:
             for m in data.get("metadata", []):
                 if m.get("key") == "dc.identifier" and m.get("value", "").lower().endswith(".pdf"):
                     return m.get("value")
+                    
+            # 4. Check metadata for OAPEN handle links to recursively resolve DOAB pointers to OAPEN PDFs
+            for m in data.get("metadata", []):
+                val = m.get("value", "")
+                if m.get("key") == "dc.identifier" and "oapen.org/handle/" in val.lower():
+                    print(f"Resolving nested OAPEN handle found in DOAB metadata: {val}")
+                    return resolve_doab_pdf(val)
     except Exception as e:
         print(f"Error resolving DOAB handle: {e}")
     return url

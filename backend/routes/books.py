@@ -396,9 +396,15 @@ def link_catalogue_book(
             except Exception:
                 pass
                 
-        local_pdf = f"books/{book_id}.pdf"
-        local_txt = f"books/{book_id}.txt"
-        if not os.path.exists(local_pdf) and not os.path.exists(local_txt):
+        collection_exists = False
+        try:
+            col = chroma_client.get_collection(name=collection_name)
+            if col.count() > 0:
+                collection_exists = True
+        except Exception:
+            pass
+
+        if not collection_exists:
             background_tasks.add_task(
                 index_catalogue_book_task,
                 book_id,
@@ -731,6 +737,25 @@ def view_book_pdf_endpoint(
     if not pdf_url:
         raise HTTPException(status_code=404, detail="Book PDF URL could not be found.")
 
+    # 0. Resolve OpenStax website URLs to direct high-resolution PDF download link dynamically
+    if pdf_url and "openstax.org" in pdf_url and not pdf_url.endswith(".pdf"):
+        book_res = supabase.table("global_books").select("title").eq("id", global_book_id).execute()
+        if book_res.data:
+            book_title = book_res.data[0]["title"]
+            try:
+                api_res = requests.get("https://openstax.org/apps/cms/api/v2/pages/?type=books.Book&limit=250", timeout=10).json()
+                for item in api_res.get("items", []):
+                    item_title = item.get("title", "").lower()
+                    if book_title.lower() in item_title or item_title in book_title.lower():
+                        detail = requests.get(item["meta"]["detail_url"], timeout=10).json()
+                        resolved = detail.get("high_resolution_pdf_url")
+                        if resolved:
+                            pdf_url = resolved
+                            save_book_url(global_book_id, pdf_url)
+                            break
+            except Exception as e:
+                print(f"Failed to dynamically resolve OpenStax PDF link: {e}")
+
     # 1. Resolve DOAB/OAPEN handles to direct PDF URL
     if "/handle/" in pdf_url:
         resolved_url = resolve_doab_pdf(pdf_url)
@@ -744,6 +769,17 @@ def view_book_pdf_endpoint(
         if resolved_url != pdf_url:
             pdf_url = resolved_url
             save_book_url(global_book_id, pdf_url)
+
+    # 2.5 Redirect OpenStax and direct PDF/Text links directly to prevent proxy overhead, latency, and memory bloat on Render
+    if pdf_url:
+        parsed_url = urllib.parse.urlparse(pdf_url)
+        path_clean = parsed_url.path.lower()
+        if (
+            "openstax.org" in pdf_url or 
+            path_clean.endswith(".pdf") or 
+            path_clean.endswith(".txt")
+        ):
+            return RedirectResponse(pdf_url)
 
     # 3. Redirect Google Drive links to direct /view page to render inline in browser
     if "drive.google.com" in pdf_url:
