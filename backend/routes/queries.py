@@ -674,13 +674,8 @@ STUDENT'S UPLOADED SOURCE MATERIAL:
                 full_guide = call_groq(messages, model="llama3-8b-8192", max_tokens=4000, timeout=55)
                 print(f"Notes generated via Groq Llama 8B for {generated_note_source_id}")
             except Exception as groq8_err:
-                print(f"Groq Llama 8B notes generation failed: {groq8_err}. Falling back to Google Gemini...")
-                try:
-                    full_guide = call_gemini(messages, model="gemini-2.0-flash", max_tokens=8192)
-                    print(f"Notes generated via Google Gemini fallback for {generated_note_source_id}")
-                except Exception as backup_err:
-                    print(f"All notes generation models failed: {backup_err}")
-                    full_guide = f"# {note_title}\n\n*Error: Failed to generate study notes: {str(backup_err)}*"
+                print(f"All notes generation models failed: {groq8_err}")
+                full_guide = f"# {note_title}\n\n*Error: Failed to generate study notes: {str(groq8_err)}*"
 
         if not full_guide.startswith("# "):
             full_guide = f"# {note_title}\n\n" + full_guide
@@ -823,13 +818,13 @@ async def analyze_notes_outline(
     del file_content
     
     # Call fast LLM to extract key conceptual topics only
-    outline_prompt = f"""Analyze the educational text below and identify a list of 3 to 6 major conceptual academic topics. Group similar small or related subtopics together so that the total number of topics is strictly between 3 and 6.
-
+    outline_prompt = f"""Analyze the educational text below and identify a list of at least 10 major conceptual academic topics.
+    
 CRITICAL RULES:
-1. STRICT LIMIT (3 to 6 TOPICS): The final list length MUST be between 3 and 6. If you find more than 6 topics, merge related ones.
-2. GROUP SUBSECTIONS: Group similar small conceptual components together. For example, group "constructors", "destructors", "classes" into one topic. Group keyword variations like "const", "constexpr", "explicit", "static" into one topic. Group "virtual functions", "v-tables", "virtual destructors", "abstract classes" into one topic.
-3. CHRONOLOGICAL ORDER: Keep them in the exact order they appear in the text.
-4. Return ONLY a valid JSON list of strings, e.g. ["Topic A", "Topic B"]. Do not return markdown, preamble, or formatting blocks.
+1. STRICT REQUIREMENT (AT LEAST 10 TOPICS): The final list length MUST be at least 10. Do not merge too many topics; list all key subtopics separately so there are at least 10.
+2. CHRONOLOGICAL ORDER: Keep them in the exact order they appear in the text.
+3. Return ONLY a valid JSON list of strings, e.g. ["Topic A", "Topic B", "Topic C", "Topic D", "Topic E", "Topic F", "Topic G", "Topic H", "Topic I", "Topic J"]. Do not return markdown, preamble, or formatting blocks.
+4. If the text is short, identify and split subtopics/subsections separately to ensure you meet the 10 topic minimum.
 
 TEXT:
 {raw_text[:12000]}

@@ -85,7 +85,7 @@ def call_gemini(messages: List[dict], model: str = "gemini-2.0-flash", max_token
     elif system_text:
         contents.append({"role": "user", "parts": [{"text": system_text}]})
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GOOGLE_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={GOOGLE_API_KEY}"
     payload = {
         "contents": contents,
         "generationConfig": {
@@ -156,37 +156,55 @@ def call_groq(messages: List[dict], model: str = "llama3-8b-8192", max_tokens: i
     
     FALLBACK_MODELS = ["llama-3.3-70b-versatile", "llama3-8b-8192", "mixtral-8x7b-32768"]
     
-    # Try requested model first
-    try:
-        res = requests.post(url, json=payload, headers=headers, timeout=timeout)
-        res.raise_for_status()
-        return res.json()["choices"][0]["message"]["content"]
-    except Exception as primary_err:
-        print(f"Groq model '{model}' failed: {primary_err}")
+    import time
+    
+    # Try requested model first with automatic retries on rate limits (429) or transient failures
+    max_retries = 3
+    retry_delay = 2.0
+    for attempt in range(max_retries):
+        try:
+            res = requests.post(url, json=payload, headers=headers, timeout=timeout)
+            if res.status_code == 429:
+                print(f"Groq primary '{model}' rate limited (429). Retrying in {retry_delay}s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(retry_delay)
+                retry_delay *= 2
+                continue
+            res.raise_for_status()
+            return res.json()["choices"][0]["message"]["content"]
+        except Exception as primary_err:
+            if attempt < max_retries - 1:
+                print(f"Groq primary '{model}' attempt {attempt+1} failed: {primary_err}. Retrying in 1s...")
+                time.sleep(1.0)
+                continue
+            print(f"Groq primary '{model}' failed permanently: {primary_err}")
     
     # Try fallbacks in order, skipping the model that just failed
     for fallback_model in FALLBACK_MODELS:
         if fallback_model == model:
             continue
-        try:
-            payload["model"] = fallback_model
-            if payload.get("max_tokens", 0) > 4000:
-                payload["max_tokens"] = 4000
-            res = requests.post(url, json=payload, headers=headers, timeout=timeout)
-            res.raise_for_status()
-            return res.json()["choices"][0]["message"]["content"]
-        except Exception as fb_err:
-            print(f"Groq fallback '{fallback_model}' failed: {fb_err}")
+        payload["model"] = fallback_model
+        if payload.get("max_tokens", 0) > 4000:
+            payload["max_tokens"] = 4000
             
-    # Ultimate fallback: Call Google Gemini if all Groq models fail or if Groq key has issues
-    if GOOGLE_API_KEY:
-        try:
-            print("Ultimate fallback: Groq failed. Calling Google Gemini (gemini-2.0-flash)...")
-            return call_gemini(messages)
-        except Exception as gemini_fb_err:
-            print(f"Ultimate Gemini fallback failed: {gemini_fb_err}")
-    
-    raise HTTPException(status_code=503, detail="All Groq models and fallback systems failed. Please verify API key configuration.")
+        retry_delay = 2.0
+        for attempt in range(max_retries):
+            try:
+                res = requests.post(url, json=payload, headers=headers, timeout=timeout)
+                if res.status_code == 429:
+                    print(f"Groq fallback '{fallback_model}' rate limited (429). Retrying in {retry_delay}s... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                res.raise_for_status()
+                return res.json()["choices"][0]["message"]["content"]
+            except Exception as fb_err:
+                if attempt < max_retries - 1:
+                    print(f"Groq fallback '{fallback_model}' attempt {attempt+1} failed: {fb_err}. Retrying in 1s...")
+                    time.sleep(1.0)
+                    continue
+                print(f"Groq fallback '{fallback_model}' failed permanently: {fb_err}")
+            
+    raise HTTPException(status_code=503, detail="All Groq models failed. Please verify API key configuration.")
 
 def call_groq_vision(prompt: str, image_b64: str) -> str:
     if not GROQ_API_KEY:
