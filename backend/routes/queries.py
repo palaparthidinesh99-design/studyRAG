@@ -602,10 +602,10 @@ def generate_notes_background_task(
             context_segments = []
             
             # Query all topics concurrently to avoid sequential remote HTTP delays
-            with ThreadPoolExecutor(max_workers=min(5, len(topics))) as executor:
+            with ThreadPoolExecutor(max_workers=min(15, len(topics))) as executor:
                 future_to_topic = {
                     executor.submit(retrieve_merged_context, subject_id, t, user_id, 2, "all"): t 
-                    for t in topics[:5]
+                    for t in topics[:15]
                 }
                 for future in future_to_topic:
                     try:
@@ -820,11 +820,11 @@ async def analyze_notes_outline(
     del file_content
     
     # Call fast LLM to extract key conceptual topics only
-    outline_prompt = f"""Analyze the educational text below and identify a list of 3 to 6 major conceptual academic topics. Group similar small or related subtopics together so that the total number of topics is strictly between 3 and 6.
+    outline_prompt = f"""Analyze the educational text below and identify a list of all the major conceptual academic topics present. Group similar small or related subtopics together so that the list represents distinct, high-level subject areas.
 
 CRITICAL RULES:
-1. STRICT LIMIT (3 to 6 TOPICS): The final list length MUST be between 3 and 6. If you find more than 6 topics, merge related ones.
-2. GROUP SUBSECTIONS: Group similar small conceptual components together. For example, group "constructors", "destructors", "classes" into one topic. Group keyword variations like "const", "constexpr", "explicit", "static" into one topic. Group "virtual functions", "v-tables", "virtual destructors", "abstract classes" into one topic.
+1. EXTRACT ALL MAJOR TOPICS: Do not limit the list artificially; extract every major conceptual topic that is key to understanding the text.
+2. GROUP SUBSECTIONS: Group closely related details together under their parent concepts. For example, group "constructors", "destructors", "classes" into one topic. Group keyword variations like "const", "constexpr", "explicit", "static" into one topic.
 3. CHRONOLOGICAL ORDER: Keep them in the exact order they appear in the text.
 4. Return ONLY a valid JSON list of strings, e.g. ["Topic A", "Topic B"]. Do not return markdown, preamble, or formatting blocks.
 
