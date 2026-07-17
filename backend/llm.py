@@ -37,7 +37,7 @@ def call_ollama_fallback(messages: List[dict], max_tokens: int = 4096) -> str:
         print(f"Ollama fallback failed: {e}")
         raise e
 
-def call_groq(messages: List[dict], model: str = "llama-3.1-8b-instant", max_tokens: int = 4096, temperature: float = 0.2, timeout: int = 25) -> str:
+def call_groq(messages: List[dict], model: str = "llama-3.1-8b-instant", max_tokens: int = 4096, temperature: float = 0.2, timeout: int = 12) -> str:
     if not GROQ_API_KEY:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured. Please set it in your environment.")
     
@@ -58,7 +58,7 @@ def call_groq(messages: List[dict], model: str = "llama-3.1-8b-instant", max_tok
         if isinstance(msg.get("content"), str) and len(msg["content"]) > 12000:
             msg["content"] = msg["content"][:12000] + "\n...[truncated]"
     
-    FALLBACK_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b"]
+    FALLBACK_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "llama3-8b-8192"]
     
     # Try requested model first
     try:

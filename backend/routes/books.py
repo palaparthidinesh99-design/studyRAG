@@ -295,34 +295,38 @@ def search_catalogue(query: str = ""):
             return []
 
     try:
-        with ThreadPoolExecutor(max_workers=5) as outer_executor:
-            fut_os  = outer_executor.submit(fetch_openstax)
-            fut_lt  = outer_executor.submit(fetch_libretexts)
-            fut_otl = outer_executor.submit(fetch_otl)
-            fut_gut = outer_executor.submit(fetch_gutenberg)
-            fut_doab= outer_executor.submit(fetch_doab)
-
-            # Collect OpenStax first — fastest since it uses an in-memory cache
+        # 1. Run OpenStax and LibreTexts (the two fast, high-quality academic sources)
+        with ThreadPoolExecutor(max_workers=2) as fast_executor:
+            fut_os = fast_executor.submit(fetch_openstax)
+            fut_lt = fast_executor.submit(fetch_libretexts)
+            
             os_results = fut_os.result()
-
-            # If OpenStax already has strong hits, skip slow sources for speed
-            top_scores = [relevance_score(b) for b in os_results[:5]]
-            skip_slow = len(top_scores) >= 3 and sum(top_scores) / len(top_scores) >= 0.65
-
-            if skip_slow:
-                all_raw = os_results
-                # Still wait for LibreTexts since it's academic and usually fast
+            try:
+                lt_results = fut_lt.result(timeout=3)
+            except Exception:
+                lt_results = []
+        
+        all_raw = os_results + lt_results
+        
+        # 2. Only if we have very few/no results, query the slower archives as fallback
+        if len(all_raw) < 3:
+            with ThreadPoolExecutor(max_workers=3) as slow_executor:
+                fut_otl = slow_executor.submit(fetch_otl)
+                fut_gut = slow_executor.submit(fetch_gutenberg)
+                fut_doab = slow_executor.submit(fetch_doab)
+                
                 try:
-                    all_raw += fut_lt.result(timeout=5)
+                    all_raw += fut_otl.result(timeout=3)
                 except Exception:
                     pass
-            else:
-                all_raw = os_results
-                for fut in [fut_lt, fut_otl, fut_gut, fut_doab]:
-                    try:
-                        all_raw += fut.result(timeout=6)
-                    except Exception:
-                        pass
+                try:
+                    all_raw += fut_gut.result(timeout=3)
+                except Exception:
+                    pass
+                try:
+                    all_raw += fut_doab.result(timeout=3)
+                except Exception:
+                    pass
 
         seen_titles = set()
         deduped = []

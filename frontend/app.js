@@ -522,7 +522,11 @@ function switchWorkspaceTab(tab) {
     if (activePane) activePane.classList.add("active");
 
     if (tab === "chatbot") {
-        startNewChat();
+        if (state.queryHistory && state.queryHistory.length > 0) {
+            selectChatHistoryItem(state.queryHistory[0].id);
+        } else {
+            startNewChat();
+        }
     }
 }
 
@@ -1242,41 +1246,11 @@ async function loadQueryHistory() {
 }
 
 function isChatInsignificant(query) {
-    if (!query) return false;
-    let questions = [];
-    try {
-        questions = JSON.parse(query.extracted_text);
-        if (!Array.isArray(questions)) throw new Error("not array");
-    } catch (e) {
-        questions = [query.extracted_text || ""];
-    }
-
-    if (questions.length === 0 || (questions.length === 1 && !questions[0])) {
-        return true;
-    }
-
-    // Check if ALL questions are greetings
-    const greetingPattern = /^(hi|hello|hey|greetings|howdy|what'?s up|how are you|thanks|thank you|good morning|good afternoon|good evening)\b/i;
-    return questions.every(q => greetingPattern.test(q.trim()));
+    return false;
 }
 
 async function deleteChatIfInsignificant(queryId) {
-    if (!queryId) return;
-    const query = state.queryHistory.find(q => q.id === queryId);
-    if (query && isChatInsignificant(query)) {
-        // Remove locally from state
-        state.queryHistory = state.queryHistory.filter(q => q.id !== queryId);
-        renderQueryHistorySidebarOnly();
-
-        // Call backend to delete
-        try {
-            await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/history/${queryId}`, {
-                method: "DELETE"
-            });
-        } catch (e) {
-            console.error("Failed to auto-delete insignificant chat:", e);
-        }
-    }
+    return;
 }
 
 function renderQueryHistory() {
@@ -1355,8 +1329,9 @@ function renderQueryHistorySidebarOnly() {
         sidebarList.appendChild(tempLi);
     }
 
-    if (state.queryHistory && state.queryHistory.length > 0) {
-        state.queryHistory.forEach(q => {
+    const recentHistory = (state.queryHistory || []).slice(0, 2);
+    if (recentHistory && recentHistory.length > 0) {
+        recentHistory.forEach(q => {
             const li = document.createElement("li");
             const isActive = q.id === state.activeQueryId;
             li.className = isActive ? "history-item active" : "history-item";
@@ -1736,119 +1711,12 @@ async function openTextbookInNewTab(bookId, page = 1) {
 }
 
 async function openPDFSourceViewer(mode, bookId, title, page) {
-    page = parseInt(page) || 1;
-    openSourceViewerPane(`Library > Textbooks > ${title}`);
-
-    const iframe = document.getElementById("pdf-iframe-element");
-    const pdfFrame = document.getElementById("viewer-pdf-frame");
-
-    // Clear previous content and show loading state
-    iframe.src = "about:blank";
-    // Reset pdfFrame content if it was previously replaced with an error
-    if (!iframe.isConnected || !pdfFrame.contains(iframe)) {
-        pdfFrame.innerHTML = "";
-        pdfFrame.appendChild(iframe);
-    }
-    pdfFrame.classList.remove("hidden");
-    pdfFrame.style.position = "relative";
-
-    // Show loading state
-    const loadingEl = document.getElementById("pdf-viewer-loading");
-    if (loadingEl) {
-        loadingEl.classList.remove("hidden");
-        const textSpan = loadingEl.querySelector("span");
-        if (textSpan) textSpan.textContent = "Resolving textbook...";
-    }
-
-    try {
-        const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/books/${bookId}/url`);
-        const data = await res.json();
-
-        if (!res.ok) throw new Error(data.detail || "Could not resolve book URL");
-
-        const bookUrl = data.url;
-
-        if (data.local) {
-            // Served locally by our backend — append auth token
-            const fullBookUrl = bookUrl.startsWith("http") ? bookUrl : `${BASE_URL}${bookUrl}`;
-            iframe.onload = () => {
-                if (loadingEl) loadingEl.classList.add("hidden");
-            };
-            iframe.src = `${fullBookUrl}?token=${state.token}#page=${page}&toolbar=0&navpanes=0`;
-        } else if (data.is_pdf) {
-            // Direct PDF URL — embed via Google Docs Viewer (handles cross-origin)
-            iframe.onload = () => {
-                if (loadingEl) loadingEl.classList.add("hidden");
-            };
-            iframe.src = `https://docs.google.com/viewer?url=${encodeURIComponent(bookUrl)}&embedded=true`;
-        } else {
-            if (loadingEl) loadingEl.classList.add("hidden");
-
-            // Close the viewer modal and open in browser
-            closeSourceViewer();
-            window.open(bookUrl, "_blank", "noopener,noreferrer");
-
-            // Show a small friendly toast
-            showToast(`Opening "${escapeHTML(title)}" in a new tab…`, "info");
-            return;
-        }
-    } catch (err) {
-        if (loadingEl) loadingEl.classList.add("hidden");
-
-        iframe.src = "about:blank";
-        // Preserve the original URL for fallback open-in-browser button
-        const fallbackUrl = (typeof bookUrl !== "undefined" && bookUrl) ? bookUrl : "";
-        pdfFrame.innerHTML = `
-            <div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:14px;padding:24px;">
-                <i class="fa-solid fa-triangle-exclamation" style="font-size:2.5rem;color:#e57373;"></i>
-                <span style="color:var(--text-workspace-muted);font-size:0.95rem;text-align:center;max-width:340px;">${escapeHTML(err.message)}</span>
-                <div style="display:flex;gap:10px;margin-top:4px;">
-                    ${fallbackUrl ? `<button class="btn-outline-small" onclick="window.open('${escapeHTML(fallbackUrl)}','_blank','noopener,noreferrer')"><i class='fa-solid fa-arrow-up-right-from-square'></i> Open in Browser</button>` : ""}
-                    <button class="btn-outline-small" onclick="closeSourceViewer()">Close</button>
-                </div>
-            </div>`;
-        return;
-    }
+    openTextbookInNewTab(bookId, page);
 }
 
-
 async function openUploadSourceViewer(sourceType, sourceId, title, page = 1) {
-    if (sourceType === "image_ocr") {
-        openSourceViewerPane(`Library > Uploads > ${title}`);
-        const img = document.getElementById("image-element");
-        img.src = `${BASE_URL}/subjects/${state.activeSubjectId}/sources/${sourceId}/file?token=${state.token}`;
-        resetImageZoom();
-        document.getElementById("viewer-image-frame").classList.remove("hidden");
-        return;
-    }
-    
-    // PDFs — show in iframe using our proxy endpoint (avoids Cloudinary iframe restrictions)
-    openSourceViewerPane(`Library > Uploads > ${title} (page ${page})`);
-    const iframe = document.getElementById("pdf-iframe-element");
-    const pdfFrame = document.getElementById("viewer-pdf-frame");
-
-    // Reset to blank before setting new src
-    iframe.src = "about:blank";
-
-    const loadingEl = document.getElementById("pdf-viewer-loading");
-    if (loadingEl) {
-        loadingEl.classList.remove("hidden");
-        const textSpan = loadingEl.querySelector("span");
-        if (textSpan) textSpan.textContent = "Loading PDF...";
-    }
-
-    iframe.onload = () => {
-        if (loadingEl) loadingEl.classList.add("hidden");
-    };
-    iframe.onerror = () => {
-        if (loadingEl) loadingEl.classList.add("hidden");
-        showToast("PDF could not be loaded in viewer.", "warning");
-    };
-
-    // Proxy URL through backend — backend streams with iframe-safe headers
-    const proxyUrl = `${BASE_URL}/subjects/${state.activeSubjectId}/sources/${sourceId}/file?token=${state.token}`;
-    iframe.src = `${proxyUrl}#page=${page}`;
-    pdfFrame.classList.remove("hidden");
+    const url = `${BASE_URL}/subjects/${state.activeSubjectId}/sources/${sourceId}/file?token=${state.token}`;
+    window.open(url, "_blank", "noopener,noreferrer");
 }
 
 async function openGuideSourceViewer(sourceId, title) {

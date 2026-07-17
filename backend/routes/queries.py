@@ -576,14 +576,15 @@ STUDENT'S RESOURCE MATERIAL:
 {raw_text[:8000]}
 {rag_context}"""
 
-        from backend.llm import call_ollama_fallback
+        from backend.llm import call_groq
         full_guide = ""
         try:
             messages = [{"role": "user", "content": prompt}]
-            full_guide = call_ollama_fallback(messages, max_tokens=4000)
+            # Use llama-3.3-70b-versatile for high quality, production-ready study notes
+            full_guide = call_groq(messages, model="llama-3.3-70b-versatile", max_tokens=4000)
         except Exception as e:
-            print(f"Ollama notes generation failed: {e}")
-            full_guide = f"# {note_title}\n\n*Error: Failed to generate study notes using Ollama: {str(e)}*"
+            print(f"Groq notes generation failed: {e}")
+            full_guide = f"# {note_title}\n\n*Error: Failed to generate study notes using Groq: {str(e)}*"
 
         if not full_guide.startswith("# "):
             full_guide = f"# {note_title}\n\n" + full_guide
