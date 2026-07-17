@@ -671,7 +671,7 @@ STUDENT'S UPLOADED SOURCE MATERIAL:
         except Exception as groq70_err:
             print(f"Groq Llama 70B notes generation failed: {groq70_err}. Falling back to Groq 8B...")
             try:
-                full_guide = call_groq(messages, model="llama3-8b-8192", max_tokens=4000, timeout=55)
+                full_guide = call_groq(messages, model="llama-3.1-8b-instant", max_tokens=4000, timeout=55)
                 print(f"Notes generated via Groq Llama 8B for {generated_note_source_id}")
             except Exception as groq8_err:
                 print(f"All notes generation models failed: {groq8_err}")
@@ -835,7 +835,7 @@ JSON:"""
     try:
         from backend.llm import call_groq
         messages = [{"role": "user", "content": outline_prompt}]
-        res_text = call_groq(messages, model="llama3-8b-8192", max_tokens=1000)
+        res_text = call_groq(messages, model="llama-3.1-8b-instant", max_tokens=1000)
         
         # Robustly find and parse the JSON array in the response
         import ast
