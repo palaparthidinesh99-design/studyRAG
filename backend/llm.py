@@ -198,10 +198,10 @@ def call_groq_vision(prompt: str, image_b64: str) -> str:
         "Content-Type": "application/json"
     }
     
-    # Use Groq's active vision models (llama-3.2-11b-vision-preview)
+    # Use Groq's active vision models (meta-llama/llama-4-scout-17b-16e-instruct)
     VISION_MODELS = [
-        "llama-3.2-11b-vision-preview",
-        "llama-3.2-90b-vision-preview"
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "qwen/qwen3.6-27b"
     ]
     
     for vision_model in VISION_MODELS:
