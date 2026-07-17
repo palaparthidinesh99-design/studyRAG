@@ -595,23 +595,35 @@ def generate_notes_background_task(
         # Build a single unified prompt to generate the entire study guide in one pass
         topics_str = ", ".join([f'"{t}"' for t in topics])
         
-        # Retrieve context/RAG for all topics together to enhance accuracy — search all 3 sources
+        # Retrieve context/RAG for all topics in parallel to enhance speed and search all 3 sources
         rag_context = ""
         try:
+            from concurrent.futures import ThreadPoolExecutor
             context_segments = []
-            for t in topics[:5]:  # Up to 5 topics
-                chunks = retrieve_merged_context(subject_id, t, user_id, n_results=3, source_filter="all")
-                for c in chunks:
-                    meta = c.get("metadata", {}) or {}
-                    src_name = c.get("source_name", "Resource")
-                    src_type = c.get("source_type", "personal")
-                    if src_type == "global_book":
-                        section = meta.get("section_title", "")
-                        page = meta.get("start_page", "")
-                        label = f"[{src_name}, {section}, p.{page}]"
-                    else:
-                        label = f"[Upload: {src_name}]"
-                    context_segments.append(f"{label}\n{c['document']}")
+            
+            # Query all topics concurrently to avoid sequential remote HTTP delays
+            with ThreadPoolExecutor(max_workers=min(5, len(topics))) as executor:
+                future_to_topic = {
+                    executor.submit(retrieve_merged_context, subject_id, t, user_id, 2, "all"): t 
+                    for t in topics[:5]
+                }
+                for future in future_to_topic:
+                    try:
+                        chunks = future.result(timeout=8)
+                        for c in chunks:
+                            meta = c.get("metadata", {}) or {}
+                            src_name = c.get("source_name", "Resource")
+                            src_type = c.get("source_type", "personal")
+                            if src_type == "global_book":
+                                section = meta.get("section_title", "")
+                                page = meta.get("start_page", "")
+                                label = f"[{src_name}, {section}, p.{page}]"
+                            else:
+                                label = f"[Upload: {src_name}]"
+                            context_segments.append(f"{label}\n{c['document']}")
+                    except Exception as e:
+                        print(f"Parallel topic search failed: {e}")
+                        
             if context_segments:
                 rag_context = "\n\n--- RETRIEVED STUDY MATERIAL (USE THIS AS PRIMARY SOURCE) ---\n" + "\n\n---\n".join(context_segments)
         except Exception as rag_err:
@@ -662,7 +674,7 @@ STUDENT'S UPLOADED SOURCE MATERIAL:
             except Exception as e:
                 print(f"Groq primary notes generation failed: {e}. Falling back to Groq 8B...")
                 try:
-                    full_guide = call_groq(messages, model="llama-3.1-8b-instant", max_tokens=4000)
+                    full_guide = call_groq(messages, model="llama3-8b-8192", max_tokens=4000)
                 except Exception as backup_err:
                     print(f"Groq backup notes generation failed: {backup_err}")
                     full_guide = f"# {note_title}\n\n*Error: Failed to generate study notes: {str(backup_err)}*"
@@ -825,7 +837,7 @@ JSON:"""
     try:
         from backend.llm import call_groq
         messages = [{"role": "user", "content": outline_prompt}]
-        res_text = call_groq(messages, model="llama-3.1-8b-instant", max_tokens=1000)
+        res_text = call_groq(messages, model="llama3-8b-8192", max_tokens=1000)
         
         # Robustly find and parse the JSON array in the response
         import ast

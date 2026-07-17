@@ -129,7 +129,7 @@ def call_ollama_fallback(messages: List[dict], max_tokens: int = 4096) -> str:
         print(f"Ollama fallback failed: {e}")
         raise e
 
-def call_groq(messages: List[dict], model: str = "llama-3.1-8b-instant", max_tokens: int = 4096, temperature: float = 0.2, timeout: int = 12) -> str:
+def call_groq(messages: List[dict], model: str = "llama3-8b-8192", max_tokens: int = 4096, temperature: float = 0.2, timeout: int = 6) -> str:
 
     if not GROQ_API_KEY:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured. Please set it in your environment.")
@@ -151,7 +151,7 @@ def call_groq(messages: List[dict], model: str = "llama-3.1-8b-instant", max_tok
         if isinstance(msg.get("content"), str) and len(msg["content"]) > 12000:
             msg["content"] = msg["content"][:12000] + "\n...[truncated]"
     
-    FALLBACK_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "llama3-8b-8192"]
+    FALLBACK_MODELS = ["llama-3.3-70b-versatile", "llama3-8b-8192", "mixtral-8x7b-32768"]
     
     # Try requested model first
     try:
@@ -187,10 +187,10 @@ def call_groq_vision(prompt: str, image_b64: str) -> str:
         "Content-Type": "application/json"
     }
     
-    # Use Groq's current active vision models (llama-3.2-11b-vision-preview is deprecated)
+    # Use Groq's active vision models (llama-3.2-11b-vision-preview)
     VISION_MODELS = [
-        "meta-llama/llama-4-scout-17b-16e-instruct",
-        "meta-llama/llama-4-maverick-17b-128e-instruct-fp8",
+        "llama-3.2-11b-vision-preview",
+        "llama-3.2-90b-vision-preview"
     ]
     
     for vision_model in VISION_MODELS:
