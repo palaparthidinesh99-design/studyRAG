@@ -8,6 +8,52 @@ from backend.config import GROQ_API_KEY, OLLAMA_URL, OLLAMA_API_KEY
 
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 
+def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
+    """Generate high-quality 768-dimension vector embeddings using Google Gemini API.
+    
+    Returns a list of embedding vectors (floats), or None if the API key is not configured or fails.
+    """
+    if not GOOGLE_API_KEY:
+        print("Warning: GOOGLE_API_KEY is not configured. Falling back to default Chroma embedding function.")
+        return None
+        
+    try:
+        embeddings = []
+        # Batch requests to Google API (limit 100 content elements per batch)
+        batch_size = 100
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i+batch_size]
+            requests_payload = []
+            for t in batch_texts:
+                # Sanitize text
+                t_clean = t.strip() if t else "empty"
+                if not t_clean:
+                    t_clean = "empty"
+                requests_payload.append({
+                    "model": "models/text-embedding-004",
+                    "content": {
+                        "parts": [{"text": t_clean}]
+                    }
+                })
+                
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key={GOOGLE_API_KEY}"
+            res = requests.post(url, json={"requests": requests_payload}, timeout=30)
+            res.raise_for_status()
+            res_data = res.json()
+            
+            # Extract embeddings
+            for emb_obj in res_data.get("embeddings", []):
+                embeddings.append(emb_obj.get("values", []))
+                
+        if len(embeddings) == len(texts):
+            return embeddings
+        else:
+            print(f"Warning: Gemini embedding count mismatch: expected {len(texts)}, got {len(embeddings)}")
+            return None
+    except Exception as e:
+        print(f"Warning: Gemini embedding generation failed: {e}. Falling back to default Chroma embedding function.")
+        return None
+
 def call_gemini(messages: List[dict], model: str = "gemini-2.0-flash", max_tokens: int = 8192) -> str:
     """Call Google Gemini API for fast, high-quality LLM generation."""
     if not GOOGLE_API_KEY:

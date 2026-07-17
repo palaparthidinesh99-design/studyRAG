@@ -318,31 +318,9 @@ def search_catalogue(query: str = ""):
             return []
 
     try:
-        # Run all catalogue search fetchers in parallel always to get a rich, comprehensive list
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            fut_os = executor.submit(fetch_openstax)
-            fut_otl = executor.submit(fetch_otl)
-            fut_gut = executor.submit(fetch_gutenberg)
-            fut_doab = executor.submit(fetch_doab)
-            
-            try:
-                os_results = fut_os.result(timeout=2.5)
-            except Exception:
-                os_results = []
-            try:
-                otl_results = fut_otl.result(timeout=2.5)
-            except Exception:
-                otl_results = []
-            try:
-                gut_results = fut_gut.result(timeout=2.5)
-            except Exception:
-                gut_results = []
-            try:
-                doab_results = fut_doab.result(timeout=2.5)
-            except Exception:
-                doab_results = []
-                
-        all_raw = os_results + otl_results + gut_results + doab_results
+        # Enforce OpenStax-only catalogue search to keep listings highly fast and curated
+        os_results = fetch_openstax()
+        all_raw = os_results
 
         seen_titles = set()
         deduped = []

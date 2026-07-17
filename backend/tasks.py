@@ -72,6 +72,7 @@ def index_source_task(
             gc.collect()
 
             if chunks:
+                from backend.llm import call_gemini_embeddings
                 collection = chroma_client.get_or_create_collection(name=collection_name)
                 ids = [f"source_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
                 metadatas = [
@@ -84,10 +85,15 @@ def index_source_task(
                 ]
                 batch_size = 100
                 for i in range(0, len(chunks), batch_size):
+                    batch_docs = chunks[i:i+batch_size]
+                    # Pre-calculate Gemini embeddings to avoid local ONNX load / CPU bloat
+                    embeddings = call_gemini_embeddings(batch_docs)
+                    
                     collection.add(
                         ids=ids[i:i+batch_size],
-                        documents=chunks[i:i+batch_size],
-                        metadatas=metadatas[i:i+batch_size]
+                        documents=batch_docs,
+                        metadatas=metadatas[i:i+batch_size],
+                        embeddings=embeddings
                     )
                 print(f"Background indexing completed successfully for {filename}: {len(chunks)} chunks.")
                 del chunks, ids, metadatas
@@ -236,6 +242,7 @@ def index_catalogue_book_task(global_book_id: str, pdf_url: str, title: str, col
         # 3. Index in Chroma DB
         if chunks:
             try:
+                from backend.llm import call_gemini_embeddings
                 collection = chroma_client.get_or_create_collection(name=collection_name)
                 ids = [f"book_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
                 metadatas = [
@@ -253,10 +260,15 @@ def index_catalogue_book_task(global_book_id: str, pdf_url: str, title: str, col
                 
                 batch_size = 100
                 for i in range(0, len(documents), batch_size):
+                    batch_docs = documents[i:i+batch_size]
+                    # Pre-calculate Gemini embeddings to avoid local ONNX load / CPU bloat
+                    embeddings = call_gemini_embeddings(batch_docs)
+                    
                     collection.add(
                         ids=ids[i:i+batch_size],
-                        documents=documents[i:i+batch_size],
-                        metadatas=metadatas[i:i+batch_size]
+                        documents=batch_docs,
+                        metadatas=metadatas[i:i+batch_size],
+                        embeddings=embeddings
                     )
                 print(f"Indexed book {title} successfully: {len(chunks)} chunks.")
                 # Free memory references immediately

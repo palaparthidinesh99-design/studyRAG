@@ -202,9 +202,13 @@ def retrieve_merged_context(subject_id: str, query_text: str, user_id: str, n_re
         pass
             
     from concurrent.futures import ThreadPoolExecutor
+    from backend.llm import call_gemini_embeddings
 
     all_chunks = []
     queries_list = [query_text]
+    
+    # Pre-compute query embeddings once using Gemini to save time and API calls
+    query_embeddings = call_gemini_embeddings(queries_list)
     
     def query_single_collection(col_info):
         chunks = []
@@ -216,7 +220,11 @@ def retrieve_merged_context(subject_id: str, query_text: str, user_id: str, n_re
             if col_info.get("specific_source_id"):
                 where_filter = {"source_id": col_info["specific_source_id"]}
                 
-            results = col.query(query_texts=queries_list, n_results=query_limit, where=where_filter)
+            # Perform vector query using the precomputed Gemini embeddings if available
+            if query_embeddings:
+                results = col.query(query_embeddings=query_embeddings, n_results=query_limit, where=where_filter)
+            else:
+                results = col.query(query_texts=queries_list, n_results=query_limit, where=where_filter)
             
             if results and results.get("documents"):
                 seen_chunk_texts = set()
