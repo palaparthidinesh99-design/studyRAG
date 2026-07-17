@@ -43,32 +43,26 @@ def get_openstax_all_books():
         
     try:
         url = "https://openstax.org/apps/cms/api/v2/pages/?type=books.Book&limit=250"
-        res = requests.get(url, timeout=10).json()
+        res = requests.get(url, timeout=5).json()
         matched_items = res.get("items", [])
         
-        def fetch_detail(item):
-            try:
-                detail = requests.get(item["meta"]["detail_url"], timeout=3).json()
-                return {
-                    "source_id": str(item["id"]),
-                    "title": item["title"],
-                    "pdf_url": detail.get("high_resolution_pdf_url"),
-                    "cover_url": detail.get("cover_url"),
-                    "description": detail.get("description", ""),
-                    "author": "OpenStax",
-                    "source": "openstax"
-                }
-            except Exception:
-                return None
-                
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            results = list(executor.map(fetch_detail, matched_items))
+        books_list = []
+        for item in matched_items:
+            books_list.append({
+                "source_id": str(item["id"]),
+                "title": item["title"],
+                "detail_url": item["meta"]["detail_url"],
+                "author": "OpenStax",
+                "source": "openstax",
+                "pdf_url": None,
+                "cover_url": None,
+                "description": "OpenStax college textbook"
+            })
             
-        valid_results = [r for r in results if r is not None]
-        if valid_results:
-            _OPENSTAX_CATALOG_CACHE = valid_results
+        if books_list:
+            _OPENSTAX_CATALOG_CACHE = books_list
             _OPENSTAX_CACHE_TIME = now
-            return valid_results
+            return books_list
     except Exception as e:
         print(f"Error building OpenStax cache: {e}")
         if _OPENSTAX_CATALOG_CACHE is not None:
@@ -127,6 +121,7 @@ def search_catalogue(query: str = ""):
                 score = max(score, 0.15 + desc_overlap * 0.18)
 
         # Fuzzy fallback — penalise long titles to prefer tight matches
+        import difflib
         seq_ratio = difflib.SequenceMatcher(None, q_lower, title).ratio()
         brevity_bonus = max(0.0, 1.0 - len(title) / 120) * 0.05
         score = max(score, seq_ratio * 0.38 + brevity_bonus)
@@ -135,15 +130,33 @@ def search_catalogue(query: str = ""):
     def fetch_openstax():
         books = get_openstax_all_books()
         if not q_lower:
-            return books[:12]
-        matched = []
-        for b in books:
-            t = b["title"].lower()
-            d = (b.get("description") or "").lower()
-            if q_lower in t or any(w in t for w in q_words) or q_lower in d:
-                matched.append(b)
-        matched.sort(key=relevance_score, reverse=True)
-        return matched[:12]
+            candidates = books[:12]
+        else:
+            matched = []
+            for b in books:
+                t = b["title"].lower()
+                d = (b.get("description") or "").lower()
+                if q_lower in t or any(w in t for w in q_words) or q_lower in d:
+                    matched.append(b)
+            matched.sort(key=relevance_score, reverse=True)
+            candidates = matched[:12]
+            
+        # Resolve detail pages only for candidates in parallel
+        def resolve_detail(b):
+            if b.get("pdf_url"):
+                return b
+            try:
+                detail = requests.get(b["detail_url"], timeout=3.0).json()
+                b["pdf_url"] = detail.get("high_resolution_pdf_url")
+                b["cover_url"] = detail.get("cover_url")
+                b["description"] = detail.get("description", b["description"])
+                return b
+            except Exception:
+                return b
+                
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            resolved = list(executor.map(resolve_detail, candidates))
+        return [r for r in resolved if r is not None]
 
     def fetch_gutenberg():
         if not q_lower:

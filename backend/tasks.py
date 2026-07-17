@@ -6,7 +6,6 @@ import requests
 import urllib.parse
 from pypdf import PdfReader
 from backend.config import chroma_client
-from backend.llm import call_groq_vision
 from backend.processors import split_into_subchunks, process_pdf, fallback_process_pdf
 from backend.db_helpers import save_book_url, resolve_ia_pdf_url
 
@@ -32,6 +31,7 @@ def index_source_task(
                 print(f"Background indexing: Failed to parse PDF text: {e}")
         else:
             try:
+                from backend.llm import call_groq_vision
                 image_b64 = base64.b64encode(file_content).decode("utf-8")
                 extracted_text = call_groq_vision(
                     "Transcribe all text in this image exactly as written. Preserve paragraphs and layout as much as possible.",

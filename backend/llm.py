@@ -41,7 +41,7 @@ def call_groq(messages: List[dict], model: str = "llama-3.1-8b-instant", max_tok
     # 1. Try Cerebras first if key is configured
     if CEREBRAS_API_KEY:
         try:
-            cerebras_model = "llama3.1-70b" if "70b" in model else "llama3.1-8b"
+            cerebras_model = "gpt-oss-120b" if "70b" in model or "versatile" in model else "gemma-4-31b"
             url = "https://api.cerebras.ai/v1/chat/completions"
             headers = {
                 "Authorization": f"Bearer {CEREBRAS_API_KEY}",
