@@ -835,9 +835,14 @@ JSON:"""
     
     topics = []
     try:
-        from backend.llm import call_groq
+        from backend.llm import call_gemini, call_groq
         messages = [{"role": "user", "content": outline_prompt}]
-        res_text = call_groq(messages, model="llama3-8b-8192", max_tokens=1000)
+        res_text = ""
+        try:
+            res_text = call_gemini(messages, model="gemini-2.5-flash", max_tokens=1000)
+        except Exception as gemini_err:
+            print(f"Gemini outline extraction failed: {gemini_err}. Falling back to Groq...")
+            res_text = call_groq(messages, model="llama3-8b-8192", max_tokens=1000)
         
         # Robustly find and parse the JSON array in the response
         import ast
