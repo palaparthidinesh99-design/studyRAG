@@ -9,7 +9,7 @@ from backend.config import GROQ_API_KEY, OLLAMA_URL, OLLAMA_API_KEY
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 
 def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
-    """Generate high-quality 768-dimension vector embeddings using Google Gemini API.
+    """Generate high-quality vector embeddings using Google Gemini API.
     
     Returns a list of embedding vectors (floats), or None if the API key is not configured or fails.
     """
@@ -30,14 +30,17 @@ def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
                 if not t_clean:
                     t_clean = "empty"
                 requests_payload.append({
-                    "model": "models/text-embedding-004",
+                    "model": "models/gemini-embedding-001",
                     "content": {
                         "parts": [{"text": t_clean}]
-                    }
+                    },
+                    "outputDimensionality": 384
                 })
                 
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key={GOOGLE_API_KEY}"
-            res = requests.post(url, json={"requests": requests_payload}, timeout=30)
+            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-embedding-001:batchEmbedContents?key={GOOGLE_API_KEY}"
+            res = requests.post(url, json={
+                "requests": requests_payload
+            }, timeout=30)
             res.raise_for_status()
             res_data = res.json()
             
@@ -174,8 +177,16 @@ def call_groq(messages: List[dict], model: str = "llama3-8b-8192", max_tokens: i
             return res.json()["choices"][0]["message"]["content"]
         except Exception as fb_err:
             print(f"Groq fallback '{fallback_model}' failed: {fb_err}")
+            
+    # Ultimate fallback: Call Google Gemini if all Groq models fail or if Groq key has issues
+    if GOOGLE_API_KEY:
+        try:
+            print("Ultimate fallback: Groq failed. Calling Google Gemini (gemini-2.0-flash)...")
+            return call_gemini(messages)
+        except Exception as gemini_fb_err:
+            print(f"Ultimate Gemini fallback failed: {gemini_fb_err}")
     
-    raise HTTPException(status_code=503, detail="All Groq models failed. Please try again in a moment.")
+    raise HTTPException(status_code=503, detail="All Groq models and fallback systems failed. Please verify API key configuration.")
 
 def call_groq_vision(prompt: str, image_b64: str) -> str:
     if not GROQ_API_KEY:
