@@ -109,21 +109,54 @@ async function checkAuth() {
         showAuth();
         return;
     }
-    state.token = token;
     try {
+        // ALWAYS validate the cached token against the server — never trust localStorage alone
         const res = await fetch(`${BASE_URL}/me`, {
-            headers: {
-                "Authorization": `Bearer ${token}`
-            }
+            headers: { "Authorization": `Bearer ${token}` }
         });
-        if (!res.ok) throw new Error("Unauthorized");
+
+        if (!res.ok) {
+            // Token invalid, expired, or user not verified — clear EVERYTHING and force login
+            localStorage.removeItem("token");
+            localStorage.removeItem("email");
+            state.token = null;
+            state.email = null;
+            state.name = null;
+
+            // If server says verification pending, let user know why they were redirected
+            if (res.status === 401) {
+                try {
+                    const errBody = await res.json();
+                    if (errBody.detail && errBody.detail.toLowerCase().includes("verification")) {
+                        showAuth();
+                        // Brief delay so the auth UI is visible before showing the message
+                        setTimeout(() => {
+                            const authError = document.getElementById("auth-error");
+                            if (authError) {
+                                authError.textContent = "Your session expired because your email is not verified. Please log in and verify your email.";
+                                authError.classList.remove("hidden");
+                            }
+                        }, 100);
+                        return;
+                    }
+                } catch (_) {}
+            }
+            showAuth();
+            return;
+        }
+
         const userData = await res.json();
+        state.token = token;
         state.email = userData.email;
         state.name = userData.name || "";
         showDashboard();
     } catch (err) {
-        console.error("Auto login failed:", err);
-        handleLogout();
+        // Network error or server down — clear session and go to login
+        console.error("Auth check failed:", err);
+        localStorage.removeItem("token");
+        localStorage.removeItem("email");
+        state.token = null;
+        showAuth();
     }
 }
 

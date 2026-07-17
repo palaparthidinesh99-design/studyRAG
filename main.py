@@ -152,11 +152,21 @@ def login(req: LoginRequest):
 def read_current_user(user_id: str = Depends(get_current_user)):
     user = supabase.table("users").select("id", "email", "hashed_password").eq("id", user_id).execute()
     if not user.data:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=401, detail="User not found")
     
     u = user.data[0]
     parts = u.get("hashed_password", "").split("|")
     name = parts[1] if len(parts) > 1 else ""
+    
+    # Block unverified users even if they have a cached JWT token
+    # This ensures email verification cannot be bypassed via cached sessions
+    verified = parts[2] if len(parts) > 2 else "true"
+    if verified == "false":
+        raise HTTPException(
+            status_code=401,
+            detail="Email verification pending. Please verify your email before accessing the app."
+        )
+    
     return {
         "id": u["id"],
         "email": u["email"],
