@@ -665,7 +665,7 @@ STUDENT'S UPLOADED SOURCE MATERIAL:
         try:
             messages = [{"role": "user", "content": prompt}]
             # Try Gemini first — faster, higher quality, bigger output window
-            full_guide = call_gemini(messages, model="gemini-2.0-flash", max_tokens=8192)
+            full_guide = call_gemini(messages, model="gemini-2.5-flash", max_tokens=8192)
             print(f"Notes generated via Google Gemini for {generated_note_source_id}")
         except Exception as gemini_err:
             print(f"Gemini notes generation failed: {gemini_err}. Falling back to Groq...")
