@@ -231,42 +231,38 @@ async function handleAuthSubmit(event) {
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || "Authentication failed");
 
-        if (state.authMode === "register") {
-            // Instead of browser prompt, open our custom verification modal window
-            openVerificationModal(email);
-            showToast("Registration successful! Verification code sent to email.", "info");
-        } else {
-            state.token = data.access_token;
-            // Fetch profile to get name
-            try {
-                const profileRes = await fetch(`${BASE_URL}/me`, {
-                    headers: { "Authorization": `Bearer ${state.token}` }
-                });
-                if (profileRes.ok) {
-                    const profileData = await profileRes.json();
-                    state.email = profileData.email;
-                    state.name = profileData.name || "";
-                } else {
-                    state.email = email;
-                    state.name = "";
-                }
-            } catch (profileErr) {
+        state.token = data.access_token;
+        
+        // Fetch profile to get name
+        try {
+            const profileRes = await fetch(`${BASE_URL}/me`, {
+                headers: { "Authorization": `Bearer ${state.token}` }
+            });
+            if (profileRes.ok) {
+                const profileData = await profileRes.json();
+                state.email = profileData.email;
+                state.name = profileData.name || "";
+            } else {
                 state.email = email;
                 state.name = "";
             }
+        } catch (profileErr) {
+            state.email = email;
+            state.name = "";
+        }
 
-            localStorage.setItem("token", state.token);
-            localStorage.setItem("user_email", state.email);
-            localStorage.setItem("user_name", state.name);
-            showDashboard();
-        }
-    } catch (err) {
-        if (err.message.includes("verification pending") || err.message.includes("verify your email first")) {
-            // Open the verification modal window for login cases too
-            openVerificationModal(email);
+        localStorage.setItem("token", state.token);
+        localStorage.setItem("user_email", state.email);
+        localStorage.setItem("user_name", state.name);
+        
+        if (state.authMode === "register") {
+            showToast("Successfully registered and signed in!", "success");
         } else {
-            showToast(err.message, "danger");
+            showToast("Welcome back!", "success");
         }
+        showDashboard();
+    } catch (err) {
+        showToast(err.message, "danger");
     } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = "Continue";

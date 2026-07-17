@@ -456,39 +456,6 @@
     <!-- Toast notifications container -->
     <div id="toast-container" class="toast-container"></div>
 
-    <!-- EMAIL VERIFICATION MODAL -->
-    <div id="email-verification-modal" class="modal hidden">
-        <div class="modal-backdrop" onclick="closeVerificationModal()"></div>
-        <div class="modal-content" style="max-width: 400px;">
-            <div class="modal-header">
-                <h3>Verify Your Email</h3>
-                <button class="btn-close" onclick="closeVerificationModal()"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <form id="email-verification-form" onsubmit="submitVerificationCode(event)">
-                <div class="modal-body" style="padding: 24px;">
-                    <p style="margin-bottom:20px; font-size:0.9rem; color:var(--text-workspace-muted); line-height:1.55;">
-                        A 6-digit verification code has been sent to <strong id="verification-email-label" style="color:var(--text-workspace-main);"></strong>. Please enter the code to complete verification and sign in.
-                    </p>
-                    <div class="form-group" style="margin-bottom:20px;">
-                        <label for="verification-code-input" style="font-weight:600; margin-bottom:8px; display:block; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-workspace-muted);">6-Digit Code</label>
-                        <input type="text" id="verification-code-input" required placeholder="123456" maxlength="6" pattern="\d{6}" autocomplete="off" style="width:100%; padding:14px; border-radius:var(--radius-md); border:1px solid var(--border-color-light); background:var(--bg-dark-search); color:var(--text-workspace-main); font-size:1.4rem; text-align:center; letter-spacing:8px; font-weight:700; outline:none; transition:var(--transition-smooth); box-shadow:inset 0 2px 4px rgba(0,0,0,0.4);" onfocus="this.style.borderColor='var(--orange-accent)';" onblur="this.style.borderColor='var(--border-color-light)';">
-                    </div>
-                    <div id="verification-error-msg" class="status-alert danger hidden" style="margin-bottom:16px; padding:10px 14px; border-radius:var(--radius-md); font-size:0.85rem; border:1px solid rgba(239, 68, 68, 0.2); background:rgba(239, 68, 68, 0.05); color:#fca5a5;"></div>
-                    
-                    <p style="font-size:0.88rem; color:var(--text-workspace-muted); text-align:center; margin-top:16px;">
-                        Didn't receive the code? <a href="#" id="resend-code-btn" onclick="handleResendCode(event)" style="color:var(--orange-accent); text-decoration:none; font-weight:600; transition:var(--transition-smooth); margin-left:4px;">Resend Code</a>
-                    </p>
-                </div>
-                <div class="modal-footer" style="padding:16px 24px; display:flex; justify-content:flex-end; gap:12px; border-top:1px solid var(--border-color-light);">
-                    <button type="button" class="btn btn-secondary" onclick="closeVerificationModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary orange-btn" id="btn-submit-verify" style="min-width:130px;">
-                        <i class="fa-solid fa-shield-halved"></i> Verify Code
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <!-- Custom Confirmation Modal -->
     <div id="custom-confirm-modal" class="modal hidden">
         <div class="modal-backdrop"></div>

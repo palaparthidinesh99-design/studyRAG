@@ -32,96 +32,42 @@ def health_check():
     return {"status": "ok"}
 
 # Authentication Endpoints
-from backend.email_sender import send_verification_email
-
 @app.post("/register")
 def register(req: RegisterRequest):
     existing = supabase.table("users").select("*").eq("email", req.email).execute()
     if existing.data:
-        # Check if the existing user is unverified. If so, allow re-registration by updating code
-        user = existing.data[0]
-        db_hashed = user["hashed_password"]
-        parts = db_hashed.split("|")
-        verified = parts[2] if len(parts) > 2 else "true"
-        if verified == "false":
-            hashed = hash_password(req.password)
-            code = str(random.randint(100000, 999999))
-            db_password_field = f"{hashed}|{req.name or ''}|false|{code}"
-            supabase.table("users").update({"hashed_password": db_password_field}).eq("id", user["id"]).execute()
-            
-            # Send verification email via SMTP/Console
-            send_verification_email(req.email, code)
-            return {"status": "verification_pending", "email": req.email, "message": "Email verification pending. Verification code sent."}
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed = hash_password(req.password)
-    code = str(random.randint(100000, 999999))
-    # Store: hashed_password|name|is_verified|verification_code
-    db_password_field = f"{hashed}|{req.name or ''}|false|{code}"
+    # Store with verification status pre-approved: hashed_password|name|true|
+    db_password_field = f"{hashed}|{req.name or ''}|true|"
     
     try:
         result = supabase.table("users").insert({
             "email": req.email,
             "hashed_password": db_password_field
         }).execute()
+        user = result.data[0]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
 
-    # Send verification email via SMTP/Console
-    send_verification_email(req.email, code)
-    return {"status": "verification_pending", "email": req.email, "message": "Verification code sent."}
+    token = create_access_token(user["id"])
+    return {"access_token": token, "token_type": "bearer", "status": "verified"}
 
 @app.post("/verify-email")
 def verify_email(req: VerifyEmailRequest):
+    # Legacy endpoint: always return successful verification
     result = supabase.table("users").select("*").eq("email", req.email).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="User not found")
-
     user = result.data[0]
-    db_hashed = user["hashed_password"]
-    parts = db_hashed.split("|")
-    hashed = parts[0]
-    name = parts[1] if len(parts) > 1 else ""
-    verified = parts[2] if len(parts) > 2 else "true"
-    db_code = parts[3] if len(parts) > 3 else ""
-
-    if verified == "true":
-        token = create_access_token(user["id"])
-        return {"access_token": token, "token_type": "bearer", "status": "already_verified"}
-
-    if req.code != db_code:
-        raise HTTPException(status_code=400, detail="Invalid verification code")
-
-    # Update verification status
-    updated_field = f"{hashed}|{name}|true|"
-    supabase.table("users").update({"hashed_password": updated_field}).eq("id", user["id"]).execute()
-
     token = create_access_token(user["id"])
     return {"access_token": token, "token_type": "bearer", "status": "verified"}
 
 @app.post("/resend-code")
 def resend_code(req: ResendCodeRequest):
-    result = supabase.table("users").select("*").eq("email", req.email).execute()
-    if not result.data:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    user = result.data[0]
-    db_hashed = user["hashed_password"]
-    parts = db_hashed.split("|")
-    hashed = parts[0]
-    name = parts[1] if len(parts) > 1 else ""
-    verified = parts[2] if len(parts) > 2 else "true"
-
-    if verified == "true":
-        return {"status": "already_verified", "message": "Email is already verified."}
-
-    code = str(random.randint(100000, 999999))
-    updated_field = f"{hashed}|{name}|false|{code}"
-    supabase.table("users").update({"hashed_password": updated_field}).eq("id", user["id"]).execute()
-
-    # Send verification email via SMTP/Console
-    send_verification_email(req.email, code)
-    return {"status": "ok", "message": "Verification code resent."}
+    # Legacy endpoint: always return OK
+    return {"status": "ok", "message": "Email is already verified."}
 
 @app.post("/login")
 def login(req: LoginRequest):
@@ -133,16 +79,9 @@ def login(req: LoginRequest):
     db_hashed = user["hashed_password"]
     parts = db_hashed.split("|")
     hashed_password = parts[0]
-    verified = parts[2] if len(parts) > 2 else "true"
 
     if not verify_password(req.password, hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-
-    if verified == "false":
-        raise HTTPException(
-            status_code=401, 
-            detail="Email verification pending. Please verify your email first."
-        )
 
     token = create_access_token(user["id"])
     return {"access_token": token, "token_type": "bearer"}
@@ -157,14 +96,11 @@ def read_current_user(user_id: str = Depends(get_current_user)):
     parts = u.get("hashed_password", "").split("|")
     name = parts[1] if len(parts) > 1 else ""
     
-    # Block unverified users even if they have a cached JWT token
-    # This ensures email verification cannot be bypassed via cached sessions
-    verified = parts[2] if len(parts) > 2 else "true"
-    if verified == "false":
-        raise HTTPException(
-            status_code=401,
-            detail="Email verification pending. Please verify your email before accessing the app."
-        )
+    return {
+        "id": u["id"],
+        "email": u["email"],
+        "name": name
+    }
     
     return {
         "id": u["id"],
