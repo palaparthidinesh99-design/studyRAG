@@ -70,6 +70,28 @@ def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
         
     return cleaned_answer, active_sources
 
+def get_subject_materials_info(subject_id: str, subject_name: str) -> str:
+    try:
+        # Fetch personal sources (uploaded documents/notes)
+        personal_res = supabase.table("sources").select("title").eq("subject_id", subject_id).execute()
+        personal_titles = [s["title"] for s in personal_res.data] if personal_res.data else []
+        
+        # Fetch linked global books
+        linked_books = supabase.table("subject_books").select("global_book_id").eq("subject_id", subject_id).execute()
+        book_titles = []
+        if linked_books.data:
+            book_ids = [lb["global_book_id"] for lb in linked_books.data]
+            books = supabase.table("global_books").select("title").in_("id", book_ids).execute()
+            book_titles = [b["title"] for b in books.data] if books.data else []
+            
+        all_material_titles = personal_titles + book_titles
+        materials_str = ", ".join([f"'{t}'" for t in all_material_titles]) if all_material_titles else "None uploaded/linked yet"
+    except Exception as e:
+        print(f"Failed to fetch study guide materials info: {e}")
+        materials_str = "None"
+        
+    return f"ACTIVE SUBJECT: {subject_name}\nAVAILABLE STUDY MATERIALS: {materials_str}"
+
 
 @router.post("/query/text")
 def query_text(
@@ -110,6 +132,9 @@ def query_text(
             "answer": answer,
             "sources": []
         }
+
+    subject_name = subject.data[0]["name"]
+    materials_info = get_subject_materials_info(subject_id, subject_name)
 
     questions_list = []
     answers_list = []
@@ -200,13 +225,16 @@ def query_text(
 
     prompt = f"""Use the retrieved study material below to answer the student's question.
 
+STUDY ENVIRONMENT DETAILS:
+{materials_info}
+
 {context_block}
 
 INSTRUCTIONS:
 - You MUST read all passages in the context block above and find the one most relevant to the question.
 - If a relevant passage exists, base your answer directly on it — paraphrase, explain, and expand from that content.
 - Do NOT include raw citation labels like [Book, Section, p.X] inline in your answer body. Only in CITED_SOURCE at the end.
-- If the context block says "No relevant material found", answer thoroughly from general academic knowledge. You MUST place any note or disclaimer stating that no matching references were found in the study materials at the very end of your response, never at the beginning.
+- If the context block says "No relevant material found" or contains no matching context, answer the question using your general academic knowledge, ensuring your explanation is customized and styled to fit the active subject '{subject_name}'. At the very end of your response (and ONLY at the end), add a single short line: 'Note: No direct matching references found in the uploaded study materials.'
 {explain_depth_instruction}
 Student's Question: {req.query}
 """
@@ -274,6 +302,9 @@ async def query_photo(
     subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
+    
+    subject_name = subject.data[0]["name"]
+    materials_info = get_subject_materials_info(subject_id, subject_name)
     
     file_content = await file.read()
     file_ext = os.path.splitext(file.filename)[1].lower()
@@ -387,13 +418,16 @@ async def query_photo(
 
     prompt = f"""Use the retrieved study material below to answer the student's question.
 
+STUDY ENVIRONMENT DETAILS:
+{materials_info}
+
 {context_block}
 
 INSTRUCTIONS:
 - You MUST read all passages in the context block above and find the one most relevant to the question.
 - If a relevant passage exists, base your answer directly on it — paraphrase, explain, and expand from that content.
 - Do NOT include raw citation labels like [Book, Section, p.X] inline in your answer body. Only in CITED_SOURCE at the end.
-- If the context block says "No relevant material found", answer from general knowledge and note that no study material matched.
+- If the context block says "No relevant material found" or contains no matching context, answer the question using your general academic knowledge, ensuring your explanation is customized and styled to fit the active subject '{subject_name}'. At the very end of your response (and ONLY at the end), add a single short line: 'Note: No direct matching references found in the uploaded study materials.'
 {explain_depth_instruction}
 Student's Question: {extracted_text}
 """
@@ -580,7 +614,7 @@ STUDENT'S RESOURCE MATERIAL:
         full_guide = ""
         try:
             messages = [{"role": "user", "content": prompt}]
-            # Try Groq/Cerebras (which redirects to Cerebras llama3.1-70b or uses Groq's llama-3.3-70b-versatile)
+            # Try Groq (using Groq's llama-3.3-70b-versatile model)
             full_guide = call_groq(messages, model="llama-3.3-70b-versatile", max_tokens=4000)
         except Exception as e:
             print(f"Groq notes generation failed: {e}. Falling back to Ollama...")
