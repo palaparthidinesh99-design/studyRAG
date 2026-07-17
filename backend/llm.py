@@ -132,7 +132,7 @@ def call_ollama_fallback(messages: List[dict], max_tokens: int = 4096) -> str:
         print(f"Ollama fallback failed: {e}")
         raise e
 
-def call_groq(messages: List[dict], model: str = "llama3-8b-8192", max_tokens: int = 4096, temperature: float = 0.2, timeout: int = 6) -> str:
+def call_groq(messages: List[dict], model: str = "llama3-8b-8192", max_tokens: int = 4096, temperature: float = 0.2, timeout: int = 12) -> str:
 
     if not GROQ_API_KEY:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured. Please set it in your environment.")

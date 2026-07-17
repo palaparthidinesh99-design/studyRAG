@@ -666,12 +666,12 @@ STUDENT'S UPLOADED SOURCE MATERIAL:
         
         # Try Groq 70B first as requested by the user — max tokens model
         try:
-            full_guide = call_groq(messages, model="llama-3.3-70b-versatile", max_tokens=4000)
+            full_guide = call_groq(messages, model="llama-3.3-70b-versatile", max_tokens=4000, timeout=55)
             print(f"Notes generated via Groq Llama 70B for {generated_note_source_id}")
         except Exception as groq70_err:
             print(f"Groq Llama 70B notes generation failed: {groq70_err}. Falling back to Groq 8B...")
             try:
-                full_guide = call_groq(messages, model="llama3-8b-8192", max_tokens=4000)
+                full_guide = call_groq(messages, model="llama3-8b-8192", max_tokens=4000, timeout=55)
                 print(f"Notes generated via Groq Llama 8B for {generated_note_source_id}")
             except Exception as groq8_err:
                 print(f"Groq Llama 8B notes generation failed: {groq8_err}. Falling back to Google Gemini...")
