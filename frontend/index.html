@@ -38,6 +38,10 @@
             </div>
 
             <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+                <div id="auth-name-group" class="form-group hidden">
+                    <label for="auth-name">Your Name</label>
+                    <input type="text" id="auth-name" placeholder="John Doe" autocomplete="off">
+                </div>
                 <div class="form-group">
                     <label for="auth-email">Email Address</label>
                     <input type="email" id="auth-email" required placeholder="name@domain.com" autocomplete="off">
@@ -98,8 +102,12 @@
                         <button id="tab-btn-chatbot" class="tab-btn" onclick="switchWorkspaceTab('chatbot')">Chatbot</button>
                     </div>
                     
-                    <div class="workspace-user-card">
-                        <span id="user-email-display-nav">student@studyrag.com</span>
+                    <div class="workspace-user-card" style="display: flex; align-items: center; gap: 12px;">
+                        <div id="user-avatar-badge" style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--orange-accent), #f97316); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 1.1rem; box-shadow: 0 4px 10px rgba(249, 115, 22, 0.25); text-transform: uppercase;">S</div>
+                        <div class="user-info-text" style="display: flex; flex-direction: column; text-align: right; line-height: 1.2;">
+                            <span id="user-email-display-nav" style="display: none;">student@studyrag.com</span>
+                            <span id="user-name-display-nav" style="font-size: 0.85rem; color: var(--text-workspace); font-weight: 600;">Student</span>
+                        </div>
                         <button class="btn-logout" onclick="handleLogout()" title="Log Out">
                             <i class="fa-solid fa-right-from-bracket"></i>
                         </button>

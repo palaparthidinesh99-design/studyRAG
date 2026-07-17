@@ -103,6 +103,16 @@ def query_text(
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
 
+    user_name = "Student"
+    try:
+        user_res = supabase.table("users").select("hashed_password").eq("id", user_id).execute()
+        if user_res.data:
+            parts = user_res.data[0].get("hashed_password", "").split("|", 1)
+            if len(parts) > 1 and parts[1].strip():
+                user_name = parts[1].strip()
+    except Exception:
+        pass
+
     # Fast intercept for greetings
     greeting_pattern = re.compile(
         r"^(hi|hello|hey|greetings|howdy|what'?s up|how are you|thanks|thank you|good morning|good afternoon|good evening)\b", 
@@ -173,7 +183,7 @@ def query_text(
         retrieval_text = f"{req.query} {questions_list[-1]}"
         
     retrieved = retrieve_merged_context(subject_id, retrieval_text, user_id, n_results=8, source_filter=req.source_filter or "all")
-    RELEVANCE_THRESHOLD = 1.80
+    RELEVANCE_THRESHOLD = 1.95
     retrieved = [c for c in retrieved if c.get("distance", 0.0) <= RELEVANCE_THRESHOLD]
     
     context_parts = []
@@ -231,9 +241,11 @@ STUDY ENVIRONMENT DETAILS:
 {context_block}
 
 INSTRUCTIONS:
+- The student's name is '{user_name}'. Address or mention the student by their name '{user_name}' occasionally in a natural, warm, and friendly tutor-like tone (e.g. 'Good question, {user_name}!', 'Let's check this out, {user_name}...').
 - You MUST read all passages in the context block above and find the one most relevant to the question.
 - If a relevant passage exists, base your answer directly on it — paraphrase, explain, and expand from that content.
 - Do NOT include raw citation labels like [Book, Section, p.X] inline in your answer body. Only in CITED_SOURCE at the end.
+- Whenever comparing concepts, listing properties, summarizing data, or detailing variations, organize the information in beautiful markdown tables to keep your explanation clean, visual, and highly structured.
 - If the context block says "No relevant material found" or contains no matching context, answer the question using your general academic knowledge, ensuring your explanation is customized and styled to fit the active subject '{subject_name}'. At the very end of your response (and ONLY at the end), add a single short line: 'Note: No direct matching references found in the uploaded study materials.'
 {explain_depth_instruction}
 Student's Question: {req.query}
@@ -302,6 +314,16 @@ async def query_photo(
     subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
+
+    user_name = "Student"
+    try:
+        user_res = supabase.table("users").select("hashed_password").eq("id", user_id).execute()
+        if user_res.data:
+            parts = user_res.data[0].get("hashed_password", "").split("|", 1)
+            if len(parts) > 1 and parts[1].strip():
+                user_name = parts[1].strip()
+    except Exception:
+        pass
     
     subject_name = subject.data[0]["name"]
     materials_info = get_subject_materials_info(subject_id, subject_name)
@@ -369,7 +391,7 @@ async def query_photo(
         retrieval_text = f"{extracted_text} {questions_list[-1]}"
         
     retrieved = retrieve_merged_context(subject_id, retrieval_text, user_id, n_results=8, source_filter=source_filter)
-    RELEVANCE_THRESHOLD = 1.80
+    RELEVANCE_THRESHOLD = 1.95
     retrieved = [c for c in retrieved if c.get("distance", 0.0) <= RELEVANCE_THRESHOLD]
     
     context_parts = []
@@ -424,9 +446,11 @@ STUDY ENVIRONMENT DETAILS:
 {context_block}
 
 INSTRUCTIONS:
+- The student's name is '{user_name}'. Address or mention the student by their name '{user_name}' occasionally in a natural, warm, and friendly tutor-like tone (e.g. 'Good question, {user_name}!', 'Let's check this out, {user_name}...').
 - You MUST read all passages in the context block above and find the one most relevant to the question.
 - If a relevant passage exists, base your answer directly on it — paraphrase, explain, and expand from that content.
 - Do NOT include raw citation labels like [Book, Section, p.X] inline in your answer body. Only in CITED_SOURCE at the end.
+- Whenever comparing concepts, listing properties, summarizing data, or detailing variations, organize the information in beautiful markdown tables to keep your explanation clean, visual, and highly structured.
 - If the context block says "No relevant material found" or contains no matching context, answer the question using your general academic knowledge, ensuring your explanation is customized and styled to fit the active subject '{subject_name}'. At the very end of your response (and ONLY at the end), add a single short line: 'Note: No direct matching references found in the uploaded study materials.'
 {explain_depth_instruction}
 Student's Question: {extracted_text}
@@ -580,7 +604,7 @@ def generate_notes_background_task(
         except Exception as rag_err:
             print(f"RAG search failed for unified notes: {rag_err}")
 
-        status_msg = f"processing:30:Generating unified study guide with Ollama...:{generated_note_source_id}"
+        status_msg = f"processing:30:Generating study guide sections...:{generated_note_source_id}"
         try:
             supabase.table("sources").update({"storage_path": status_msg}).eq("id", generated_note_source_id).execute()
         except Exception:
@@ -602,7 +626,7 @@ You MUST organize the guide as a tree hierarchy based on the student's resource 
 STRICT Formatting and Semantics Rules:
 - **NO DUPLICATION**: Do not repeat definitions or sub-topics across different sections. Explain each concept once, in its most appropriate subtree location.
 - **DEPTH**: Write detailed, comprehensive explanations for all sub-topics. Do not crop or artificially truncate the explanations; ensure they have complete academic depth.
-- **TABLES**: PROACTIVELY generate markdown comparison tables (with blank lines before and after) to contrast different sub-topics, parameters, or types.
+- **TABLES**: PROACTIVELY generate detailed markdown comparison tables (with columns, headers, and blank lines before and after) to compare concepts, list attributes, summarize features, or contrast options whenever possible. Aim to include at least one relevant markdown table in almost every section/topic to maximize visual readability.
 - **NO MERMAID**: NEVER use Mermaid code blocks or Mermaid syntax. Instead, visually represent workflows, lifecycles, or processes using a clean, text-based flow diagram using Unicode arrows (e.g. `[Step 1] ➔ [Step 2] ➔ [Step 3]`) or a structured step-by-step nested process layout.
 - **CODE BLOCKS**: All code blocks MUST declare C++ syntax (` ```cpp `) on the opening fence and be well-structured.
 
@@ -610,19 +634,19 @@ STUDENT'S RESOURCE MATERIAL:
 {raw_text[:8000]}
 {rag_context}"""
 
-        from backend.llm import call_groq, call_ollama_fallback
+        from backend.llm import call_groq
         full_guide = ""
         try:
             messages = [{"role": "user", "content": prompt}]
             # Try Groq (using Groq's llama-3.3-70b-versatile model)
             full_guide = call_groq(messages, model="llama-3.3-70b-versatile", max_tokens=4000)
         except Exception as e:
-            print(f"Groq notes generation failed: {e}. Falling back to Ollama...")
+            print(f"Groq primary notes generation failed: {e}. Falling back to Groq 8B...")
             try:
-                full_guide = call_ollama_fallback(messages, max_tokens=4000)
-            except Exception as ollama_err:
-                print(f"Ollama notes generation fallback failed: {ollama_err}")
-                full_guide = f"# {note_title}\n\n*Error: Failed to generate study notes using Groq and Ollama: {str(ollama_err)}*"
+                full_guide = call_groq(messages, model="llama-3.1-8b-instant", max_tokens=4000)
+            except Exception as backup_err:
+                print(f"Groq backup notes generation failed: {backup_err}")
+                full_guide = f"# {note_title}\n\n*Error: Failed to generate study notes using Groq API: {str(backup_err)}*"
 
         if not full_guide.startswith("# "):
             full_guide = f"# {note_title}\n\n" + full_guide
@@ -757,12 +781,12 @@ async def analyze_notes_outline(
         )
     
     # Call fast LLM to extract key conceptual topics only
-    outline_prompt = f"""Analyze the educational text below and identify a list of 3 to 6 major conceptual academic topics (e.g. "Constructors", "Destructors", "Operator Overloading", "Virtual Functions", "Abstract Classes", "Friend Functions").
+    outline_prompt = f"""Analyze the educational text below and identify a list of 3 to 6 major conceptual academic topics. Group similar small or related subtopics together so that the total number of topics is strictly between 3 and 6.
 
 CRITICAL RULES:
-1. CONCEPTUAL TOPICS ONLY: Extract only major conceptual headers.
-2. DO NOT EXTRACT SUBSECTIONS: Do NOT include subheadings, worked examples, practice problems, diagrams, definitions, summaries, introduction, characteristics, or conclusions as separate topics. They must be merged into the parent conceptual topic.
-3. CHRONOLOGICAL ORDER: The list of topics MUST be in the exact order they appear in the text.
+1. STRICT LIMIT (3 to 6 TOPICS): The final list length MUST be between 3 and 6. If you find more than 6 topics, merge related ones.
+2. GROUP SUBSECTIONS: Group similar small conceptual components together. For example, group "constructors", "destructors", "classes" into one topic. Group keyword variations like "const", "constexpr", "explicit", "static" into one topic. Group "virtual functions", "v-tables", "virtual destructors", "abstract classes" into one topic.
+3. CHRONOLOGICAL ORDER: Keep them in the exact order they appear in the text.
 4. Return ONLY a valid JSON list of strings, e.g. ["Topic A", "Topic B"]. Do not return markdown, preamble, or formatting blocks.
 
 TEXT:
@@ -848,14 +872,11 @@ def trigger_notes_generation(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create generated note placeholder: {str(e)}")
         
-    # 3. Spin off background notes generation using python threading
-    # We use a daemon thread so it runs independent of request termination (Vercel exception)
-    thread = threading.Thread(
-        target=generate_notes_background_task,
-        args=(subject_id, user_id, req.source_id, req.topics, generated_note_data["id"], collection_name)
+    # 3. Spin off background notes generation using FastAPI's BackgroundTasks pool
+    background_tasks.add_task(
+        generate_notes_background_task,
+        subject_id, user_id, req.source_id, req.topics, generated_note_data["id"], collection_name
     )
-    thread.daemon = True
-    thread.start()
     
     return {
         "id": generated_note_data["id"],

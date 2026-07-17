@@ -199,7 +199,7 @@ def retrieve_merged_context(subject_id: str, query_text: str, user_id: str, n_re
                     "specific_source_id": None
                 })
         
-        collections_to_query = rank_and_filter_resources(query_text, collections_to_query)
+        pass
             
     from concurrent.futures import ThreadPoolExecutor
 
@@ -299,9 +299,21 @@ def get_book_url(book_id: str) -> Optional[str]:
         try:
             with open(mapping_path, "r") as f:
                 mapping = json.load(f)
-                return mapping.get(book_id)
+                val = mapping.get(book_id)
+                if val:
+                    return val
         except Exception:
             pass
+            
+    # Database persistent fallback
+    try:
+        res = supabase.table("global_books").select("source").eq("id", book_id).execute()
+        if res.data and res.data[0].get("source"):
+            source_val = res.data[0]["source"]
+            if "|" in source_val:
+                return source_val.split("|", 1)[1]
+    except Exception:
+        pass
     return None
 
 def resolve_ia_pdf_url(ident: str) -> Optional[str]:
@@ -324,3 +336,93 @@ def resolve_ia_pdf_url(ident: str) -> Optional[str]:
     except Exception as e:
         print(f"Error resolving IA PDF for {ident}: {e}")
         return None
+
+def resolve_doab_pdf(url: str) -> str:
+    if "/handle/" not in url:
+        return url
+    handle = url.split("/handle/")[-1].strip("/")
+    domain = "library.oapen.org" if "oapen.org" in url else "directory.doabooks.org"
+    api_url = f"https://{domain}/rest/handle/{handle}?expand=metadata,bitstreams"
+    try:
+        res = requests.get(api_url, headers={"Accept": "application/json"}, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            # 1. Check bitstreams for pdf
+            for b in data.get("bitstreams", []):
+                name = b.get("name", "")
+                if name.lower().endswith(".pdf") and b.get("retrieveLink"):
+                    return f"https://{domain}{b.get('retrieveLink')}"
+            
+            # 2. Check metadata for publisher.oabooks.exampleUrl
+            for m in data.get("metadata", []):
+                if m.get("key") == "publisher.oabooks.exampleUrl" and m.get("value"):
+                    return m.get("value")
+                    
+            # 3. Check metadata for dc.identifier containing pdf
+            for m in data.get("metadata", []):
+                if m.get("key") == "dc.identifier" and m.get("value", "").lower().endswith(".pdf"):
+                    return m.get("value")
+    except Exception as e:
+        print(f"Error resolving DOAB handle: {e}")
+    return url
+
+def resolve_html_to_pdf_link(url: str) -> str:
+    import html
+    if not url or "drive.google.com" in url or "/handle/" in url or "openstax.org" in url:
+        return url
+        
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        res = requests.get(url, headers=headers, timeout=10, verify=False)
+        content_type = res.headers.get("content-type", "").lower()
+        if "text/html" not in content_type:
+            return url
+            
+        html_text = res.text
+        
+        # 1. Search for citation_pdf_url in meta tags (standard Google Scholar metadata)
+        meta_matches = re.findall(r'<meta[^>]+name=["\'](?:bepress_)?citation_pdf_url["\'][^>]+content=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
+        if not meta_matches:
+            meta_matches = re.findall(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\'](?:bepress_)?citation_pdf_url["\']', html_text, re.IGNORECASE)
+            
+        if meta_matches:
+            resolved = urllib.parse.urljoin(url, html.unescape(meta_matches[0]))
+            print(f"Resolved from citation_pdf_url meta tag: {resolved}")
+            return resolved
+            
+        # 2. Search for link tags with type="application/pdf"
+        link_matches = re.findall(r'<link[^>]+type=["\']application/pdf["\'][^>]+href=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
+        if not link_matches:
+            link_matches = re.findall(r'<link[^>]+href=["\']([^"\']+)["\'][^>]+type=["\']application/pdf["\']', html_text, re.IGNORECASE)
+        if link_matches:
+            resolved = urllib.parse.urljoin(url, html.unescape(link_matches[0]))
+            print(f"Resolved from link tag type application/pdf: {resolved}")
+            return resolved
+
+        # 3. Fallback to anchor tags matching criteria
+        raw_links = re.findall(r'href=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
+        resolved_links = [urllib.parse.urljoin(url, html.unescape(rl)) for rl in raw_links]
+        
+        pdf_links = []
+        for l in resolved_links:
+            l_clean = l.split("?")[0].lower()
+            if (l_clean.endswith(".pdf") or 
+                "/bitstream/" in l_clean or 
+                "/download" in l_clean or 
+                "viewcontent.cgi" in l_clean or
+                "reader" in l_clean or
+                "media" in l_clean):
+                if l.split("?")[0] != url.split("?")[0]:
+                    pdf_links.append(l)
+                    
+        if pdf_links:
+            direct_pdfs = [l for l in pdf_links if l.split("?")[0].lower().endswith(".pdf")]
+            resolved = direct_pdfs[0] if direct_pdfs else pdf_links[0]
+            print(f"Resolved from anchor tags: {resolved}")
+            return resolved
+    except Exception as e:
+        print(f"Failed to resolve HTML page {url}: {e}")
+        
+    return url

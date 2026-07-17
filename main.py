@@ -38,9 +38,12 @@ def register(req: RegisterRequest):
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed = hash_password(req.password)
+    # Store the user's name appended to their password hash
+    db_password_field = f"{hashed}|{req.name}" if req.name else hashed
+    
     result = supabase.table("users").insert({
         "email": req.email,
-        "hashed_password": hashed
+        "hashed_password": db_password_field
     }).execute()
 
     user_id = result.data[0]["id"]
@@ -54,7 +57,11 @@ def login(req: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     user = result.data[0]
-    if not verify_password(req.password, user["hashed_password"]):
+    db_hashed = user["hashed_password"]
+    parts = db_hashed.split("|", 1)
+    hashed_password = parts[0]
+    
+    if not verify_password(req.password, hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = create_access_token(user["id"])
@@ -62,10 +69,18 @@ def login(req: LoginRequest):
 
 @app.get("/me")
 def read_current_user(user_id: str = Depends(get_current_user)):
-    user = supabase.table("users").select("id", "email").eq("id", user_id).execute()
+    user = supabase.table("users").select("id", "email", "hashed_password").eq("id", user_id).execute()
     if not user.data:
         raise HTTPException(status_code=404, detail="User not found")
-    return user.data[0]
+    
+    u = user.data[0]
+    parts = u.get("hashed_password", "").split("|", 1)
+    name = parts[1] if len(parts) > 1 else ""
+    return {
+        "id": u["id"],
+        "email": u["email"],
+        "name": name
+    }
 
 # Register modular sub-routers
 app.include_router(subjects_router)

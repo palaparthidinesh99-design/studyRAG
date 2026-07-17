@@ -2,8 +2,9 @@ import os
 import uuid
 import requests
 import urllib.parse
+import re
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
 from concurrent.futures import ThreadPoolExecutor
 import difflib
 
@@ -13,7 +14,9 @@ from backend.models import LinkCatalogueBookRequest
 from backend.db_helpers import (
     save_book_url,
     get_book_url,
-    resolve_ia_pdf_url
+    resolve_ia_pdf_url,
+    resolve_doab_pdf,
+    resolve_html_to_pdf_link
 )
 from backend.llm import is_pdf_valid
 from backend.tasks import index_catalogue_book_task
@@ -80,7 +83,11 @@ def search_catalogue(query: str = ""):
             return cached_res
 
     q_lower = query_clean
-    q_words = set(q_lower.split()) if q_lower else set()
+    STOP_WORDS = {"to", "the", "a", "an", "of", "and", "in", "for", "on", "with", "at", "by", "from", "about", "as", "into", "like", "through", "after", "over", "between", "out", "against", "during", "without", "before", "under", "around", "among", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did"}
+    SCAFFOLDING_WORDS = {"introduction", "college", "university", "volume", "part", "concepts", "essentials", "principles", "elements", "collection", "modern", "ap", "advanced", "introductory", "brief", "guide", "handbook", "textbook", "readings", "topics", "applications", "perspectives", "foundations", "survey"}
+    
+    q_words = {w for w in q_lower.split() if w not in STOP_WORDS} if q_lower else set()
+    specialized_q_words = {w for w in q_words if w not in SCAFFOLDING_WORDS}
 
     def relevance_score(book: dict) -> float:
         title = book.get("title", "").lower()
@@ -103,9 +110,15 @@ def search_catalogue(query: str = ""):
         t_words = set(title.split())
         d_words = set(desc.split())
 
-        # Word overlap on title — high weight
+        # Weighted word overlap on title — high weight
         if q_words:
-            title_overlap = len(q_words & t_words) / len(q_words)
+            def word_weight(w):
+                return 0.15 if w in SCAFFOLDING_WORDS else 1.0
+
+            total_q_weight = sum(word_weight(w) for w in q_words)
+            overlap_weight = sum(word_weight(w) for w in (q_words & t_words))
+            
+            title_overlap = overlap_weight / total_q_weight if total_q_weight > 0 else 0.0
             if title_overlap > 0:
                 score = max(score, 0.5 + title_overlap * 0.42)
 
@@ -116,7 +129,9 @@ def search_catalogue(query: str = ""):
                         score = max(score, 0.45)
                         break
 
-            desc_overlap = len(q_words & d_words) / len(q_words)
+            # Weighted description overlap
+            desc_overlap_weight = sum(word_weight(w) for w in (q_words & d_words))
+            desc_overlap = desc_overlap_weight / total_q_weight if total_q_weight > 0 else 0.0
             if desc_overlap > 0:
                 score = max(score, 0.15 + desc_overlap * 0.18)
 
@@ -132,11 +147,30 @@ def search_catalogue(query: str = ""):
         if not q_lower:
             candidates = books[:12]
         else:
+            import difflib
             matched = []
             for b in books:
                 t = b["title"].lower()
-                d = (b.get("description") or "").lower()
-                if q_lower in t or any(w in t for w in q_words) or q_lower in d:
+                # 1. Direct contains check
+                if q_lower in t:
+                    matched.append(b)
+                    continue
+                # 2. Key word checks (exact or fuzzy typo recovery)
+                t_words = set(t.split())
+                target_words = specialized_q_words if specialized_q_words else q_words
+                matched_word = False
+                for qw in target_words:
+                    if qw in t:
+                        matched_word = True
+                        break
+                    if len(qw) >= 4:
+                        for tw in t_words:
+                            if len(tw) >= 4 and difflib.SequenceMatcher(None, qw, tw).ratio() >= 0.78:
+                                matched_word = True
+                                break
+                        if matched_word:
+                            break
+                if matched_word:
                     matched.append(b)
             matched.sort(key=relevance_score, reverse=True)
             candidates = matched[:12]
@@ -195,30 +229,6 @@ def search_catalogue(query: str = ""):
             print(f"Gutenberg search failed: {e}")
             return []
 
-    def fetch_libretexts():
-        if not q_lower:
-            return []
-        try:
-            url = f"https://commons.libretexts.org/api/v1/commons/catalog?search={urllib.parse.quote(query)}"
-            res = requests.get(url, timeout=5, headers={"Accept": "application/json"}).json()  # tight 5s
-            results = []
-            for item in res.get("books", [])[:8]:
-                pdf_link = item.get("links", {}).get("pdf")
-                if not pdf_link:
-                    continue
-                results.append({
-                    "source_id": item.get("bookID", ""),
-                    "title": item.get("title", "LibreTexts Book"),
-                    "pdf_url": pdf_link,
-                    "cover_url": item.get("thumbnail", ""),
-                    "description": item.get("course", "") or "LibreTexts Open Educational Resource",
-                    "author": item.get("author") or "LibreTexts",
-                    "source": "libretexts"
-                })
-            return results
-        except Exception as e:
-            print(f"LibreTexts search failed: {e}")
-            return []
 
     def fetch_otl():
         if not q_lower:
@@ -308,49 +318,51 @@ def search_catalogue(query: str = ""):
             return []
 
     try:
-        # 1. Run OpenStax and LibreTexts (the two fast, high-quality academic sources)
-        with ThreadPoolExecutor(max_workers=2) as fast_executor:
-            fut_os = fast_executor.submit(fetch_openstax)
-            fut_lt = fast_executor.submit(fetch_libretexts)
+        # Run all catalogue search fetchers in parallel always to get a rich, comprehensive list
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            fut_os = executor.submit(fetch_openstax)
+            fut_otl = executor.submit(fetch_otl)
+            fut_gut = executor.submit(fetch_gutenberg)
+            fut_doab = executor.submit(fetch_doab)
             
-            os_results = fut_os.result()
             try:
-                lt_results = fut_lt.result(timeout=1.2)
+                os_results = fut_os.result(timeout=2.5)
             except Exception:
-                lt_results = []
-        
-        all_raw = os_results + lt_results
-        
-        # 2. Only if we have very few/no results, query the slower archives as fallback
-        if len(all_raw) < 3:
-            with ThreadPoolExecutor(max_workers=3) as slow_executor:
-                fut_otl = slow_executor.submit(fetch_otl)
-                fut_gut = slow_executor.submit(fetch_gutenberg)
-                fut_doab = slow_executor.submit(fetch_doab)
+                os_results = []
+            try:
+                otl_results = fut_otl.result(timeout=2.5)
+            except Exception:
+                otl_results = []
+            try:
+                gut_results = fut_gut.result(timeout=2.5)
+            except Exception:
+                gut_results = []
+            try:
+                doab_results = fut_doab.result(timeout=2.5)
+            except Exception:
+                doab_results = []
                 
-                try:
-                    all_raw += fut_otl.result(timeout=2.0)
-                except Exception:
-                    pass
-                try:
-                    all_raw += fut_gut.result(timeout=2.0)
-                except Exception:
-                    pass
-                try:
-                    all_raw += fut_doab.result(timeout=2.0)
-                except Exception:
-                    pass
+        all_raw = os_results + otl_results + gut_results + doab_results
 
         seen_titles = set()
         deduped = []
         for b in all_raw:
-            t = b.get("title", "").lower().strip()
+            title_val = b.get("title")
+            title_str = str(title_val or "").strip()
+            if not title_str:
+                continue
+            t = title_str.lower()
             if t not in seen_titles:
                 seen_titles.add(t)
                 deduped.append(b)
 
-        deduped.sort(key=relevance_score, reverse=True)
-        final = deduped[:20]  # Return top-20 for better coverage
+        # Filter out completely irrelevant matches (under 0.38 relevance score)
+        valid_matches = [b for b in deduped if relevance_score(b) >= 0.38]
+        # Fallback to keep at least top 3 if everything was filtered out
+        if not valid_matches and deduped:
+            valid_matches = deduped[:3]
+        valid_matches.sort(key=relevance_score, reverse=True)
+        final = valid_matches[:20]
         _SEARCH_QUERY_CACHE[query_clean] = (final, now)
         return final
     except Exception as e:
@@ -373,6 +385,17 @@ def link_catalogue_book(
     if existing_book.data:
         book_id = existing_book.data[0]["id"]
         collection_name = existing_book.data[0]["chroma_collection_name"]
+        
+        # Persistently store/update PDF URL in the source column if not present
+        source_val = existing_book.data[0].get("source") or "openstax"
+        if "|" not in source_val and req.pdf_url:
+            try:
+                supabase.table("global_books").update({
+                    "source": f"{source_val}|{req.pdf_url}"
+                }).eq("id", book_id).execute()
+            except Exception:
+                pass
+                
         local_pdf = f"books/{book_id}.pdf"
         local_txt = f"books/{book_id}.txt"
         if not os.path.exists(local_pdf) and not os.path.exists(local_txt):
@@ -387,11 +410,13 @@ def link_catalogue_book(
         book_id = str(uuid.uuid4())
         collection_name = f"book_{uuid.uuid4().hex}"
         
+        # Store source and pdf_url persistently separated by |
+        db_source = f"{req.source}|{req.pdf_url}" if req.pdf_url else req.source
         try:
             supabase.table("global_books").insert({
                 "id": book_id,
                 "title": req.title,
-                "source": req.source,
+                "source": db_source,
                 "chroma_collection_name": collection_name
             }).execute()
         except Exception as e:
@@ -680,3 +705,78 @@ def get_book_file(
         media_type="application/pdf",
         headers={"Cache-Control": "public, max-age=86400"}
     )
+
+@router.get("/subjects/{subject_id}/books/{global_book_id}/view")
+def view_book_pdf_endpoint(
+    subject_id: str,
+    global_book_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    subject = supabase.table("subjects").select("id").eq("id", subject_id).eq("user_id", user_id).execute()
+    if not subject.data:
+        raise HTTPException(status_code=404, detail="Subject not found or access denied")
+        
+    linked = supabase.table("subject_books").select("*").eq("subject_id", subject_id).eq("global_book_id", global_book_id).execute()
+    if not linked.data:
+        raise HTTPException(status_code=404, detail="Book not linked to this subject")
+        
+    pdf_url = get_book_url(global_book_id)
+    if not pdf_url:
+        book = supabase.table("global_books").select("*").eq("id", global_book_id).execute()
+        if book.data:
+            source_val = book.data[0].get("source") or "openstax"
+            if "|" in source_val:
+                pdf_url = source_val.split("|", 1)[1]
+                
+    if not pdf_url:
+        raise HTTPException(status_code=404, detail="Book PDF URL could not be found.")
+
+    # 1. Resolve DOAB/OAPEN handles to direct PDF URL
+    if "/handle/" in pdf_url:
+        resolved_url = resolve_doab_pdf(pdf_url)
+        if resolved_url != pdf_url:
+            pdf_url = resolved_url
+            save_book_url(global_book_id, pdf_url)
+            
+    # 2. Resolve HTML landing pages to direct PDF download links
+    if pdf_url:
+        resolved_url = resolve_html_to_pdf_link(pdf_url)
+        if resolved_url != pdf_url:
+            pdf_url = resolved_url
+            save_book_url(global_book_id, pdf_url)
+
+    # 3. Redirect Google Drive links to direct /view page to render inline in browser
+    if "drive.google.com" in pdf_url:
+        file_id = None
+        if "/file/d/" in pdf_url:
+            file_id = pdf_url.split("/file/d/")[1].split("/")[0].split("?")[0]
+        elif "id=" in pdf_url:
+            file_id = pdf_url.split("id=")[1].split("&")[0]
+        if file_id:
+            return RedirectResponse(f"https://drive.google.com/file/d/{file_id}/view")
+
+    # 3. Stream other book files (like OTL, LibreTexts) with inline Content-Disposition to prevent auto downloads
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        resp = requests.get(pdf_url, stream=True, headers=headers, timeout=20, allow_redirects=True, verify=False)
+        resp.raise_for_status()
+        
+        content_type = resp.headers.get("content-type", "application/pdf")
+        if "text/html" in content_type.lower():
+            # Redirect if it resolves to a webpage instead of raw file stream
+            return RedirectResponse(pdf_url)
+
+        def chunk_generator():
+            for chunk in resp.iter_content(chunk_size=16384):
+                if chunk:
+                    yield chunk
+
+        headers_dict = {
+            "Content-Disposition": f"inline; filename=\"book_{global_book_id}.pdf\""
+        }
+        return StreamingResponse(chunk_generator(), media_type=content_type, headers=headers_dict)
+    except Exception as e:
+        print(f"Failed to stream book: {e}. Redirecting directly to the resolved URL.")
+        return RedirectResponse(pdf_url)

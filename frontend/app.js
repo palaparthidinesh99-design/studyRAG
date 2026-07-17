@@ -5,6 +5,7 @@
 const state = {
     token: null,
     email: "",
+    name: "",
     authMode: "login", // 'login' | 'register'
     subjects: [],
     activeSubjectId: null,
@@ -99,8 +100,32 @@ document.addEventListener("DOMContentLoaded", () => {
     // Initialize image viewport controls
     initImageViewerControls();
 
-    showAuth();
+    checkAuth();
 });
+
+async function checkAuth() {
+    const token = localStorage.getItem("token");
+    if (!token) {
+        showAuth();
+        return;
+    }
+    state.token = token;
+    try {
+        const res = await fetch(`${BASE_URL}/me`, {
+            headers: {
+                "Authorization": `Bearer ${token}`
+            }
+        });
+        if (!res.ok) throw new Error("Unauthorized");
+        const userData = await res.json();
+        state.email = userData.email;
+        state.name = userData.name || "";
+        showDashboard();
+    } catch (err) {
+        console.error("Auto login failed:", err);
+        handleLogout();
+    }
+}
 
 // ==========================================================================
 // AUTHENTICATION LOGIC
@@ -115,6 +140,12 @@ function showDashboard() {
     document.getElementById("auth-layer").classList.add("hidden");
     document.getElementById("dashboard-layer").classList.remove("hidden");
     document.getElementById("user-email-display-nav").textContent = state.email || "student@studyrag.com";
+    
+    const displayName = state.name || "Student";
+    document.getElementById("user-name-display-nav").textContent = displayName;
+    
+    const initial = displayName.trim().charAt(0).toUpperCase() || "S";
+    document.getElementById("user-avatar-badge").textContent = initial;
 
     // Hide both views until subjects have loaded to prevent a flash of empty state
     document.getElementById("subject-empty-view").classList.add("hidden");
@@ -128,10 +159,22 @@ function switchAuthMode(mode) {
     const tabs = document.querySelectorAll(".auth-tab-btn");
     tabs[0].classList.toggle("active", mode === "login");
     tabs[1].classList.toggle("active", mode === "register");
+
+    const nameGroup = document.getElementById("auth-name-group");
+    const nameInput = document.getElementById("auth-name");
+    if (mode === "register") {
+        nameGroup.classList.remove("hidden");
+        nameInput.required = true;
+    } else {
+        nameGroup.classList.add("hidden");
+        nameInput.required = false;
+        nameInput.value = "";
+    }
 }
 
 async function handleAuthSubmit(event) {
     event.preventDefault();
+    const name = document.getElementById("auth-name").value.trim();
     const email = document.getElementById("auth-email").value.trim();
     const password = document.getElementById("auth-password").value;
     const submitBtn = document.getElementById("auth-submit-btn");
@@ -141,10 +184,15 @@ async function handleAuthSubmit(event) {
     const endpoint = state.authMode === "register" ? "/register" : "/login";
 
     try {
+        const payload = { email, password };
+        if (state.authMode === "register") {
+            payload.name = name;
+        }
+
         const res = await fetch(`${BASE_URL}${endpoint}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify(payload)
         });
 
         const data = await res.json();
@@ -164,9 +212,27 @@ async function handleAuthSubmit(event) {
             state.token = data.access_token;
         }
 
-        state.email = email;
+        // Fetch profile to get name
+        try {
+            const profileRes = await fetch(`${BASE_URL}/me`, {
+                headers: { "Authorization": `Bearer ${state.token}` }
+            });
+            if (profileRes.ok) {
+                const profileData = await profileRes.json();
+                state.email = profileData.email;
+                state.name = profileData.name || "";
+            } else {
+                state.email = email;
+                state.name = "";
+            }
+        } catch (profileErr) {
+            state.email = email;
+            state.name = "";
+        }
+
         localStorage.setItem("token", state.token);
-        localStorage.setItem("user_email", email);
+        localStorage.setItem("user_email", state.email);
+        localStorage.setItem("user_name", state.name);
         showDashboard();
     } catch (err) {
         alert(err.message);
@@ -1693,21 +1759,8 @@ function openSourceViewerPane(breadcrumbText) {
 
 async function openTextbookInNewTab(bookId, page = 1) {
     page = parseInt(page) || 1;
-    try {
-        const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/books/${bookId}/url`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || "Could not resolve book URL");
-        
-        let url = data.url;
-        if (url) {
-            url = url.split("#")[0];
-            window.open(`${url}#page=${page}`, "_blank", "noopener,noreferrer");
-        } else {
-            showToast("Failed to open book: URL not found", "danger");
-        }
-    } catch (err) {
-        showToast(err.message, "danger");
-    }
+    const url = `${BASE_URL}/subjects/${state.activeSubjectId}/books/${bookId}/view?token=${encodeURIComponent(state.token)}#page=${page}`;
+    window.open(url, "_blank", "noopener,noreferrer");
 }
 
 async function openPDFSourceViewer(mode, bookId, title, page) {

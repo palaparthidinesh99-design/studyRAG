@@ -7,7 +7,7 @@ import urllib.parse
 from pypdf import PdfReader
 from backend.config import chroma_client
 from backend.processors import split_into_subchunks, process_pdf, fallback_process_pdf
-from backend.db_helpers import save_book_url, resolve_ia_pdf_url
+from backend.db_helpers import save_book_url, resolve_ia_pdf_url, resolve_doab_pdf, resolve_html_to_pdf_link
 
 def index_source_task(
     source_id: str,
@@ -31,7 +31,11 @@ def index_source_task(
                 print(f"Background indexing: Failed to parse PDF text: {e}")
         else:
             try:
-                from backend.llm import call_groq_vision
+                from backend.llm import call_groq_vision, compress_image
+                try:
+                    file_content = compress_image(file_content)
+                except Exception:
+                    pass
                 image_b64 = base64.b64encode(file_content).decode("utf-8")
                 extracted_text = call_groq_vision(
                     "Transcribe all text in this image exactly as written. Preserve paragraphs and layout as much as possible.",
@@ -79,6 +83,53 @@ def index_catalogue_book_task(global_book_id: str, pdf_url: str, title: str, col
         else:
             print(f"Could not resolve IA PDF for task: {ident}")
             return
+            
+    # Resolve dynamic OpenStax redirect links to static direct PDF URLs
+    if pdf_url and ("openstax.org/downloads/download" in pdf_url or "openstax.org/downloads" in pdf_url):
+        try:
+            print(f"Resolving dynamic OpenStax PDF link for: {title}")
+            cms_url = "https://openstax.org/apps/cms/api/v2/pages/?type=books.Book&limit=250"
+            cms_res = requests.get(cms_url, timeout=10).json()
+            matched_page = None
+            clean_title = title.replace("[by OpenStax]", "").strip().lower()
+            for item in cms_res.get("items", []):
+                item_title = item["title"].lower().strip()
+                if clean_title in item_title or item_title in clean_title:
+                    matched_page = item
+                    break
+            
+            if matched_page:
+                detail_res = requests.get(matched_page["meta"]["detail_url"], timeout=10).json()
+                direct_url = detail_res.get("high_resolution_pdf_url") or detail_res.get("pdf_url")
+                if direct_url and "assets.openstax.org" in direct_url:
+                    print(f"Successfully resolved dynamic link to static PDF URL: {direct_url}")
+                    pdf_url = direct_url
+                    save_book_url(global_book_id, pdf_url)
+        except Exception as resolve_err:
+            print(f"Failed to dynamically resolve OpenStax PDF link: {resolve_err}")
+            
+    # Resolve DOAB/OAPEN handle links to direct PDF links
+    if pdf_url and "/handle/" in pdf_url:
+        try:
+            print(f"Resolving DOAB/OAPEN handle link for: {title}")
+            resolved_pdf = resolve_doab_pdf(pdf_url)
+            if resolved_pdf != pdf_url:
+                pdf_url = resolved_pdf
+                save_book_url(global_book_id, pdf_url)
+                print(f"Successfully resolved DOAB handle to direct link: {pdf_url}")
+        except Exception as resolve_err:
+            print(f"Failed to resolve DOAB handle: {resolve_err}")
+            
+    # Resolve any remaining HTML landing page links (like OTL, LibreTexts) using citation_pdf_url metadata crawling
+    if pdf_url:
+        try:
+            resolved_pdf = resolve_html_to_pdf_link(pdf_url)
+            if resolved_pdf != pdf_url:
+                pdf_url = resolved_pdf
+                save_book_url(global_book_id, pdf_url)
+                print(f"Successfully crawled/resolved HTML landing page to direct link: {pdf_url}")
+        except Exception as resolve_err:
+            print(f"Failed to crawl/resolve HTML landing page link: {resolve_err}")
             
     file_path = None
     try:

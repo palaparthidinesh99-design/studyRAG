@@ -28,6 +28,11 @@ async def upload_source(
         source_type = "text_pdf"
     elif file_ext in [".png", ".jpg", ".jpeg", ".webp"]:
         source_type = "image_ocr"
+        try:
+            from backend.llm import compress_image
+            file_content = compress_image(file_content)
+        except Exception as compress_err:
+            print(f"Failed to compress note image: {compress_err}")
     else:
         raise HTTPException(status_code=400, detail="Unsupported file format. Must be PDF or image.")
     
