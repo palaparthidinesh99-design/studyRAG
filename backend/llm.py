@@ -222,6 +222,8 @@ def call_groq_vision(prompt: str, image_b64: str) -> str:
         "qwen/qwen3.6-27b"
     ]
     
+    import time
+    max_retries = 3
     for vision_model in VISION_MODELS:
         payload = {
             "model": vision_model,
@@ -240,12 +242,24 @@ def call_groq_vision(prompt: str, image_b64: str) -> str:
             "temperature": 0.2,
             "max_tokens": 4096
         }
-        try:
-            res = requests.post(url, json=payload, headers=headers, timeout=45)
-            res.raise_for_status()
-            return res.json()["choices"][0]["message"]["content"]
-        except Exception as e:
-            print(f"Groq Vision model '{vision_model}' failed: {e}")
+        
+        retry_delay = 4.0
+        for attempt in range(max_retries):
+            try:
+                res = requests.post(url, json=payload, headers=headers, timeout=45)
+                if res.status_code == 429:
+                    print(f"Groq vision model '{vision_model}' rate limited (429). Retrying in {retry_delay}s... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                res.raise_for_status()
+                return res.json()["choices"][0]["message"]["content"]
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"Groq vision model '{vision_model}' attempt {attempt+1} failed: {e}. Retrying in 2s...")
+                    time.sleep(2.0)
+                    continue
+                print(f"Groq vision model '{vision_model}' failed permanently: {e}")
     
     raise HTTPException(status_code=500, detail="All Groq vision models failed. Please try a smaller or clearer image.")
 
