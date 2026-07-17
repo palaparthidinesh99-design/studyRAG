@@ -32,6 +32,8 @@ def health_check():
     return {"status": "ok"}
 
 # Authentication Endpoints
+from backend.email_sender import send_verification_email
+
 @app.post("/register")
 def register(req: RegisterRequest):
     existing = supabase.table("users").select("*").eq("email", req.email).execute()
@@ -47,10 +49,9 @@ def register(req: RegisterRequest):
             db_password_field = f"{hashed}|{req.name or ''}|false|{code}"
             supabase.table("users").update({"hashed_password": db_password_field}).eq("id", user["id"]).execute()
             
-            print("=" * 60)
-            print(f"EMAIL VERIFICATION CODE (RE-REGISTER) FOR {req.email}: {code}")
-            print("=" * 60)
-            return {"status": "verification_pending", "email": req.email, "message": "Email verification pending. Verification code printed to server logs."}
+            # Send verification email via SMTP/Console
+            send_verification_email(req.email, code)
+            return {"status": "verification_pending", "email": req.email, "message": "Email verification pending. Verification code sent."}
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed = hash_password(req.password)
@@ -66,10 +67,9 @@ def register(req: RegisterRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
 
-    print("=" * 60)
-    print(f"EMAIL VERIFICATION CODE FOR {req.email}: {code}")
-    print("=" * 60)
-    return {"status": "verification_pending", "email": req.email, "message": "Verification code printed to server logs."}
+    # Send verification email via SMTP/Console
+    send_verification_email(req.email, code)
+    return {"status": "verification_pending", "email": req.email, "message": "Verification code sent."}
 
 @app.post("/verify-email")
 def verify_email(req: VerifyEmailRequest):
@@ -119,9 +119,8 @@ def resend_code(req: ResendCodeRequest):
     updated_field = f"{hashed}|{name}|false|{code}"
     supabase.table("users").update({"hashed_password": updated_field}).eq("id", user["id"]).execute()
 
-    print("=" * 60)
-    print(f"RESENT EMAIL VERIFICATION CODE FOR {req.email}: {code}")
-    print("=" * 60)
+    # Send verification email via SMTP/Console
+    send_verification_email(req.email, code)
     return {"status": "ok", "message": "Verification code resent."}
 
 @app.post("/login")

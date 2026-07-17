@@ -232,90 +232,172 @@ async function handleAuthSubmit(event) {
         if (!res.ok) throw new Error(data.detail || "Authentication failed");
 
         if (state.authMode === "register") {
-            const code = prompt("Registration details submitted! Please check the server console logs for the 6-digit verification code sent to your email and enter it below:");
-            if (!code) {
-                showToast("Registration pending email verification. Please sign in to verify your email.", "warning");
-                submitBtn.disabled = false;
-                submitBtn.textContent = "Continue";
-                return;
-            }
-            
-            // Verify code
-            const verifyRes = await fetch(`${BASE_URL}/verify-email`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, code: code.trim() })
-            });
-            const verifyData = await verifyRes.json();
-            if (!verifyRes.ok) throw new Error(verifyData.detail || "Invalid verification code.");
-            
-            state.token = verifyData.access_token;
-            showToast("Email verified and registered successfully!", "success");
+            // Instead of browser prompt, open our custom verification modal window
+            openVerificationModal(email);
+            showToast("Registration successful! Verification code sent to email.", "info");
         } else {
             state.token = data.access_token;
-        }
-
-        // Fetch profile to get name
-        try {
-            const profileRes = await fetch(`${BASE_URL}/me`, {
-                headers: { "Authorization": `Bearer ${state.token}` }
-            });
-            if (profileRes.ok) {
-                const profileData = await profileRes.json();
-                state.email = profileData.email;
-                state.name = profileData.name || "";
-            } else {
+            // Fetch profile to get name
+            try {
+                const profileRes = await fetch(`${BASE_URL}/me`, {
+                    headers: { "Authorization": `Bearer ${state.token}` }
+                });
+                if (profileRes.ok) {
+                    const profileData = await profileRes.json();
+                    state.email = profileData.email;
+                    state.name = profileData.name || "";
+                } else {
+                    state.email = email;
+                    state.name = "";
+                }
+            } catch (profileErr) {
                 state.email = email;
                 state.name = "";
             }
-        } catch (profileErr) {
-            state.email = email;
-            state.name = "";
-        }
 
-        localStorage.setItem("token", state.token);
-        localStorage.setItem("user_email", state.email);
-        localStorage.setItem("user_name", state.name);
-        showDashboard();
+            localStorage.setItem("token", state.token);
+            localStorage.setItem("user_email", state.email);
+            localStorage.setItem("user_name", state.name);
+            showDashboard();
+        }
     } catch (err) {
         if (err.message.includes("verification pending") || err.message.includes("verify your email first")) {
-            const code = prompt("Email verification is pending. Please enter the 6-digit verification code to complete verification and sign in:");
-            if (code) {
-                try {
-                    const verifyRes = await fetch(`${BASE_URL}/verify-email`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ email, code: code.trim() })
-                    });
-                    const verifyData = await verifyRes.json();
-                    if (!verifyRes.ok) throw new Error(verifyData.detail || "Invalid verification code.");
-                    
-                    state.token = verifyData.access_token;
-                    showToast("Email verified successfully!", "success");
-                    
-                    localStorage.setItem("token", state.token);
-                    localStorage.setItem("user_email", email);
-                    
-                    const profileRes = await fetch(`${BASE_URL}/me`, {
-                        headers: { "Authorization": `Bearer ${state.token}` }
-                    });
-                    if (profileRes.ok) {
-                        const profileData = await profileRes.json();
-                        state.name = profileData.name || "";
-                        localStorage.setItem("user_name", state.name);
-                    }
-                    showDashboard();
-                    return;
-                } catch (verifyErr) {
-                    showToast(verifyErr.message, "danger");
-                }
-            }
+            // Open the verification modal window for login cases too
+            openVerificationModal(email);
         } else {
             showToast(err.message, "danger");
         }
     } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = "Continue";
+    }
+}
+
+// ==========================================================================
+// EMAIL VERIFICATION MODAL HANDLERS
+// ==========================================================================
+
+function openVerificationModal(email) {
+    state.pendingVerificationEmail = email;
+    document.getElementById("verification-email-label").textContent = email;
+    document.getElementById("verification-code-input").value = "";
+    document.getElementById("verification-error-msg").classList.add("hidden");
+    document.getElementById("email-verification-modal").classList.remove("hidden");
+    
+    // Auto-focus code input
+    setTimeout(() => {
+        document.getElementById("verification-code-input").focus();
+    }, 100);
+}
+
+function closeVerificationModal() {
+    document.getElementById("email-verification-modal").classList.add("hidden");
+    state.pendingVerificationEmail = null;
+}
+
+async function submitVerificationCode(event) {
+    event.preventDefault();
+    if (!state.pendingVerificationEmail) return;
+
+    const codeInput = document.getElementById("verification-code-input");
+    const code = codeInput.value.trim();
+    const errorMsg = document.getElementById("verification-error-msg");
+    const submitBtn = document.getElementById("btn-submit-verify");
+
+    if (code.length !== 6 || isNaN(code)) {
+        errorMsg.textContent = "Please enter a valid 6-digit number code.";
+        errorMsg.classList.remove("hidden");
+        return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Verifying...`;
+    errorMsg.classList.add("hidden");
+
+    try {
+        const verifyRes = await fetch(`${BASE_URL}/verify-email`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: state.pendingVerificationEmail, code: code })
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyRes.ok) throw new Error(verifyData.detail || "Invalid verification code.");
+
+        state.token = verifyData.access_token;
+        state.email = state.pendingVerificationEmail;
+        
+        // Load profile details
+        try {
+            const profileRes = await fetch(`${BASE_URL}/me`, {
+                headers: { "Authorization": `Bearer ${state.token}` }
+            });
+            if (profileRes.ok) {
+                const profileData = await profileRes.json();
+                state.name = profileData.name || "";
+            } else {
+                state.name = "";
+            }
+        } catch (_) {
+            state.name = "";
+        }
+
+        localStorage.setItem("token", state.token);
+        localStorage.setItem("user_email", state.email);
+        localStorage.setItem("user_name", state.name);
+
+        closeVerificationModal();
+        showToast("Email verified successfully!", "success");
+        showDashboard();
+    } catch (err) {
+        errorMsg.textContent = err.message;
+        errorMsg.classList.remove("hidden");
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fa-solid fa-shield-halved"></i> Verify Code`;
+    }
+}
+
+async function handleResendCode(event) {
+    event.preventDefault();
+    if (!state.pendingVerificationEmail) return;
+
+    const resendBtn = document.getElementById("resend-code-btn");
+    const originalText = resendBtn.innerHTML;
+    
+    resendBtn.style.pointerEvents = "none";
+    resendBtn.style.opacity = "0.5";
+    resendBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending...`;
+
+    try {
+        const res = await fetch(`${BASE_URL}/resend-code`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: state.pendingVerificationEmail })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to resend code.");
+
+        showToast("Verification code resent successfully!", "success");
+        
+        // Simple countdown before allowing next resend
+        let seconds = 30;
+        const interval = setInterval(() => {
+            seconds--;
+            if (seconds <= 0) {
+                clearInterval(interval);
+                resendBtn.style.pointerEvents = "auto";
+                resendBtn.style.opacity = "1";
+                resendBtn.innerHTML = `Resend Code`;
+            } else {
+                resendBtn.innerHTML = `Resend in ${seconds}s`;
+            }
+        }, 1000);
+
+    } catch (err) {
+        showToast(err.message, "danger");
+        resendBtn.style.pointerEvents = "auto";
+        resendBtn.style.opacity = "1";
+        resendBtn.innerHTML = originalText;
     }
 }
 
