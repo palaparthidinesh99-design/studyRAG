@@ -31,43 +31,6 @@ def read_root():
 def health_check():
     return {"status": "ok"}
 
-@app.get("/test-keys")
-def test_keys():
-    import os
-    from backend.llm import call_gemini, call_groq
-    
-    google_key = os.environ.get("GOOGLE_API_KEY", "")
-    groq_key = os.environ.get("GROQ_API_KEY", "")
-    
-    gemini_status = "Not tested"
-    try:
-        if google_key:
-            res = call_gemini([{"role": "user", "content": "Hi"}], model="gemini-2.5-flash", max_tokens=10)
-            gemini_status = f"Success: {res}"
-        else:
-            gemini_status = "Google Key missing"
-    except Exception as e:
-        gemini_status = f"Failed: {str(e)}"
-        
-    groq_status = "Not tested"
-    try:
-        if groq_key:
-            res = call_groq([{"role": "user", "content": "Hi"}], model="llama3-8b-8192", max_tokens=10)
-            groq_status = f"Success: {res}"
-        else:
-            groq_status = "Groq Key missing"
-    except Exception as e:
-        groq_status = f"Failed: {str(e)}"
-        
-    return {
-        "google_key_configured": bool(google_key),
-        "google_key_prefix": google_key[:8] if google_key else "",
-        "groq_key_configured": bool(groq_key),
-        "groq_key_prefix": groq_key[:8] if groq_key else "",
-        "gemini_test": gemini_status,
-        "groq_test": groq_status
-    }
-
 # Authentication Endpoints
 @app.post("/register")
 def register(req: RegisterRequest):
