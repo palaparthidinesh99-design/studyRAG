@@ -875,6 +875,9 @@ JSON:"""
         # Default fallback topics
         topics = ["Key Term Definitions", "Core Principles & Mechanics", "Practical Applications", "Practice Questions"]
         
+    if not topics or len(topics) < 2:
+        topics = ["Key Term Definitions", "Core Principles & Mechanics", "Practical Applications", "Practice Questions"]
+        
     return {
         "source_id": source_data["id"],
         "title": file.filename,
