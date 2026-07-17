@@ -57,8 +57,8 @@ def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
         print(f"Warning: Gemini embedding generation failed: {e}. Falling back to default Chroma embedding function.")
         return None
 
-def call_gemini(messages: List[dict], model: str = "gemini-2.5-flash", max_tokens: int = 8192) -> str:
-    """Call Google Gemini API for fast, high-quality LLM generation with robust rate-limit fallbacks."""
+def call_gemini(messages: List[dict], model: str = "gemini-2.0-flash", max_tokens: int = 8192) -> str:
+    """Call Google Gemini API for fast, high-quality LLM generation."""
     if not GOOGLE_API_KEY:
         raise Exception("GOOGLE_API_KEY not configured")
     
@@ -71,6 +71,7 @@ def call_gemini(messages: List[dict], model: str = "gemini-2.5-flash", max_token
         if role == "system":
             system_text = content
         elif role == "user":
+            # Prepend system text to first user message if present
             if system_text:
                 content = f"{system_text}\n\n{content}"
                 system_text = ""
@@ -78,11 +79,13 @@ def call_gemini(messages: List[dict], model: str = "gemini-2.5-flash", max_token
         elif role == "assistant":
             contents.append({"role": "model", "parts": [{"text": content}]})
     
+    # Append remaining system text if no user message followed
     if system_text and contents:
         contents[0]["parts"][0]["text"] = system_text + "\n\n" + contents[0]["parts"][0]["text"]
     elif system_text:
         contents.append({"role": "user", "parts": [{"text": system_text}]})
     
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GOOGLE_API_KEY}"
     payload = {
         "contents": contents,
         "generationConfig": {
@@ -90,30 +93,13 @@ def call_gemini(messages: List[dict], model: str = "gemini-2.5-flash", max_token
             "temperature": 0.2
         }
     }
-
-    # Fallback model chain to prevent 429 quota exhaustion blocks on free tiers
-    models_to_try = [model, "gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.0-flash"]
-    # Deduplicate while preserving order
-    seen = set()
-    models_to_try = [m for m in models_to_try if not (m in seen or seen.add(m))]
-
-    last_err = None
-    for m in models_to_try:
-        # Try stable API v1 first, fall back to v1beta if needed
-        for api_ver in ["v1", "v1beta"]:
-            url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{m}:generateContent?key={GOOGLE_API_KEY}"
-            try:
-                res = requests.post(url, json=payload, timeout=90)
-                if res.status_code == 200:
-                    data = res.json()
-                    return data["candidates"][0]["content"]["parts"][0]["text"]
-                else:
-                    print(f"Gemini call to {m} ({api_ver}) returned status {res.status_code}: {res.text[:200]}")
-            except Exception as e:
-                print(f"Gemini call to {m} ({api_ver}) failed: {e}")
-                last_err = e
-                
-    raise Exception(f"All Gemini models and API versions failed. Last error: {last_err}")
+    res = requests.post(url, json=payload, timeout=120)
+    res.raise_for_status()
+    data = res.json()
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError) as e:
+        raise Exception(f"Unexpected Gemini response: {data}")
 
 def call_ollama(endpoint: str, payload: dict) -> requests.Response:
     url = f"{OLLAMA_URL}/{endpoint}"

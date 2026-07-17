@@ -602,10 +602,10 @@ def generate_notes_background_task(
             context_segments = []
             
             # Query all topics concurrently to avoid sequential remote HTTP delays
-            with ThreadPoolExecutor(max_workers=min(15, len(topics))) as executor:
+            with ThreadPoolExecutor(max_workers=min(5, len(topics))) as executor:
                 future_to_topic = {
                     executor.submit(retrieve_merged_context, subject_id, t, user_id, 2, "all"): t 
-                    for t in topics[:15]
+                    for t in topics[:5]
                 }
                 for future in future_to_topic:
                     try:
@@ -662,21 +662,24 @@ STUDENT'S UPLOADED SOURCE MATERIAL:
 
         from backend.llm import call_groq, call_gemini
         full_guide = ""
+        messages = [{"role": "user", "content": prompt}]
+        
+        # Try Groq 70B first as requested by the user — max tokens model
         try:
-            messages = [{"role": "user", "content": prompt}]
-            # Try Gemini first — faster, higher quality, bigger output window
-            full_guide = call_gemini(messages, model="gemini-2.5-flash", max_tokens=8192)
-            print(f"Notes generated via Google Gemini for {generated_note_source_id}")
-        except Exception as gemini_err:
-            print(f"Gemini notes generation failed: {gemini_err}. Falling back to Groq...")
+            full_guide = call_groq(messages, model="llama-3.3-70b-versatile", max_tokens=4000)
+            print(f"Notes generated via Groq Llama 70B for {generated_note_source_id}")
+        except Exception as groq70_err:
+            print(f"Groq Llama 70B notes generation failed: {groq70_err}. Falling back to Groq 8B...")
             try:
-                full_guide = call_groq(messages, model="llama-3.3-70b-versatile", max_tokens=4000)
-            except Exception as e:
-                print(f"Groq primary notes generation failed: {e}. Falling back to Groq 8B...")
+                full_guide = call_groq(messages, model="llama3-8b-8192", max_tokens=4000)
+                print(f"Notes generated via Groq Llama 8B for {generated_note_source_id}")
+            except Exception as groq8_err:
+                print(f"Groq Llama 8B notes generation failed: {groq8_err}. Falling back to Google Gemini...")
                 try:
-                    full_guide = call_groq(messages, model="llama3-8b-8192", max_tokens=4000)
+                    full_guide = call_gemini(messages, model="gemini-2.0-flash", max_tokens=8192)
+                    print(f"Notes generated via Google Gemini fallback for {generated_note_source_id}")
                 except Exception as backup_err:
-                    print(f"Groq backup notes generation failed: {backup_err}")
+                    print(f"All notes generation models failed: {backup_err}")
                     full_guide = f"# {note_title}\n\n*Error: Failed to generate study notes: {str(backup_err)}*"
 
         if not full_guide.startswith("# "):
@@ -820,11 +823,11 @@ async def analyze_notes_outline(
     del file_content
     
     # Call fast LLM to extract key conceptual topics only
-    outline_prompt = f"""Analyze the educational text below and identify a list of all the major conceptual academic topics present. Group similar small or related subtopics together so that the list represents distinct, high-level subject areas.
+    outline_prompt = f"""Analyze the educational text below and identify a list of 3 to 6 major conceptual academic topics. Group similar small or related subtopics together so that the total number of topics is strictly between 3 and 6.
 
 CRITICAL RULES:
-1. EXTRACT ALL MAJOR TOPICS: Do not limit the list artificially; extract every major conceptual topic that is key to understanding the text.
-2. GROUP SUBSECTIONS: Group closely related details together under their parent concepts. For example, group "constructors", "destructors", "classes" into one topic. Group keyword variations like "const", "constexpr", "explicit", "static" into one topic.
+1. STRICT LIMIT (3 to 6 TOPICS): The final list length MUST be between 3 and 6. If you find more than 6 topics, merge related ones.
+2. GROUP SUBSECTIONS: Group similar small conceptual components together. For example, group "constructors", "destructors", "classes" into one topic. Group keyword variations like "const", "constexpr", "explicit", "static" into one topic. Group "virtual functions", "v-tables", "virtual destructors", "abstract classes" into one topic.
 3. CHRONOLOGICAL ORDER: Keep them in the exact order they appear in the text.
 4. Return ONLY a valid JSON list of strings, e.g. ["Topic A", "Topic B"]. Do not return markdown, preamble, or formatting blocks.
 
@@ -835,14 +838,9 @@ JSON:"""
     
     topics = []
     try:
-        from backend.llm import call_gemini, call_groq
+        from backend.llm import call_groq
         messages = [{"role": "user", "content": outline_prompt}]
-        res_text = ""
-        try:
-            res_text = call_gemini(messages, model="gemini-2.5-flash", max_tokens=1000)
-        except Exception as gemini_err:
-            print(f"Gemini outline extraction failed: {gemini_err}. Falling back to Groq...")
-            res_text = call_groq(messages, model="llama3-8b-8192", max_tokens=1000)
+        res_text = call_groq(messages, model="llama3-8b-8192", max_tokens=1000)
         
         # Robustly find and parse the JSON array in the response
         import ast
@@ -873,9 +871,6 @@ JSON:"""
     except Exception as e:
         print(f"Failed to extract outline topics: {e}")
         # Default fallback topics
-        topics = ["Key Term Definitions", "Core Principles & Mechanics", "Practical Applications", "Practice Questions"]
-        
-    if not topics or len(topics) < 2:
         topics = ["Key Term Definitions", "Core Principles & Mechanics", "Practical Applications", "Practice Questions"]
         
     return {
