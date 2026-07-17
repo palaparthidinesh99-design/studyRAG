@@ -199,15 +199,25 @@ async function handleAuthSubmit(event) {
         if (!res.ok) throw new Error(data.detail || "Authentication failed");
 
         if (state.authMode === "register") {
-            showToast("Registration successful! Logging you in...", "success");
-            const loginRes = await fetch(`${BASE_URL}/login`, {
+            const code = prompt("Registration details submitted! Please check the server console logs for the 6-digit verification code sent to your email and enter it below:");
+            if (!code) {
+                showToast("Registration pending email verification. Please sign in to verify your email.", "warning");
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Continue";
+                return;
+            }
+            
+            // Verify code
+            const verifyRes = await fetch(`${BASE_URL}/verify-email`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, password })
+                body: JSON.stringify({ email, code: code.trim() })
             });
-            const loginData = await loginRes.json();
-            if (!loginRes.ok) throw new Error(loginData.detail || "Automatic login failed");
-            state.token = loginData.access_token;
+            const verifyData = await verifyRes.json();
+            if (!verifyRes.ok) throw new Error(verifyData.detail || "Invalid verification code.");
+            
+            state.token = verifyData.access_token;
+            showToast("Email verified and registered successfully!", "success");
         } else {
             state.token = data.access_token;
         }
@@ -235,7 +245,41 @@ async function handleAuthSubmit(event) {
         localStorage.setItem("user_name", state.name);
         showDashboard();
     } catch (err) {
-        alert(err.message);
+        if (err.message.includes("verification pending") || err.message.includes("verify your email first")) {
+            const code = prompt("Email verification is pending. Please enter the 6-digit verification code to complete verification and sign in:");
+            if (code) {
+                try {
+                    const verifyRes = await fetch(`${BASE_URL}/verify-email`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ email, code: code.trim() })
+                    });
+                    const verifyData = await verifyRes.json();
+                    if (!verifyRes.ok) throw new Error(verifyData.detail || "Invalid verification code.");
+                    
+                    state.token = verifyData.access_token;
+                    showToast("Email verified successfully!", "success");
+                    
+                    localStorage.setItem("token", state.token);
+                    localStorage.setItem("user_email", email);
+                    
+                    const profileRes = await fetch(`${BASE_URL}/me`, {
+                        headers: { "Authorization": `Bearer ${state.token}` }
+                    });
+                    if (profileRes.ok) {
+                        const profileData = await profileRes.json();
+                        state.name = profileData.name || "";
+                        localStorage.setItem("user_name", state.name);
+                    }
+                    showDashboard();
+                    return;
+                } catch (verifyErr) {
+                    showToast(verifyErr.message, "danger");
+                }
+            }
+        } else {
+            showToast(err.message, "danger");
+        }
     } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = "Continue";
@@ -810,7 +854,8 @@ async function submitNotesTopics(event) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 source_id: currentAnalyzeResult.source_id,
-                topics: selectedTopics
+                topics: selectedTopics,
+                pre_extracted_text: currentAnalyzeResult.raw_text || ""  // Skip re-download on server
             })
         });
         
@@ -1701,7 +1746,7 @@ function appendMessage(role, text, citations = [], originalQuery = "", queryId =
     if (role === "assistant" && text && !text.startsWith("⚠️ Error:") && !text.startsWith("Hello") && !text.startsWith("Hi")) {
         const saveBtn = bubble.querySelector(".btn-save-note");
         if (saveBtn) {
-            const cleanQuery = originalQuery.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 30);
+            const cleanQuery = String(originalQuery || "").replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 30);
             const titleStr = cleanQuery ? `QA - ${cleanQuery}` : "Saved Study Note";
             saveBtn.addEventListener("click", () => {
                 saveMessageAsNote(saveBtn, titleStr, text);

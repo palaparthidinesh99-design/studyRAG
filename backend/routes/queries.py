@@ -512,6 +512,7 @@ Student's Question: {extracted_text}
 class TriggerNotesRequest(BaseModel):
     source_id: str
     topics: List[str]
+    pre_extracted_text: Optional[str] = None  # Text already extracted during /analyze step
 
 def generate_notes_background_task(
     subject_id: str,
@@ -519,17 +520,20 @@ def generate_notes_background_task(
     source_id: Optional[str],
     topics: List[str],
     generated_note_source_id: str,
-    collection_name: str
+    collection_name: str,
+    pre_extracted_text: str = ""  # Passed from /analyze to skip re-download
 ):
+    import gc
     try:
-        from pypdf import PdfReader
-        from concurrent.futures import ThreadPoolExecutor
-        from backend.config import download_file_bytes
-        
-        raw_text = ""
-        # Only fetch and download if source_id is provided
-        if source_id:
-            # 1. Fetch the source details
+        raw_text = pre_extracted_text or ""
+        title = "source"
+
+        # Only re-download and re-parse the file if pre_extracted_text was NOT provided
+        # This avoids a costly 30-60s re-download + PDF parse when /analyze already did this
+        if not raw_text.strip() and source_id:
+            from pypdf import PdfReader
+            from backend.config import download_file_bytes
+            
             src_res = supabase.table("sources").select("*").eq("id", source_id).execute()
             if not src_res.data:
                 print("Background notes gen failed: source document not found.")
@@ -539,46 +543,46 @@ def generate_notes_background_task(
             storage_path = src_data["storage_path"]
             title = src_data["title"]
             
-            # 2. Download raw text/content of the source document
             try:
                 file_bytes = download_file_bytes(storage_path)
                 source_type = src_data.get("source_type", "")
                 
                 if source_type == "text_pdf" or title.lower().endswith(".pdf"):
-                    file_ext = ".pdf"
-                elif source_type == "image_ocr" or any(ext in title.lower() for ext in [".png", ".jpg", ".jpeg", ".webp"]):
-                    file_ext = ".jpg"
-                else:
-                    file_ext = os.path.splitext(title.lower())[1]
-                
-                if file_ext == ".pdf":
                     pdf_file = io.BytesIO(file_bytes)
                     reader = PdfReader(pdf_file)
                     for page in reader.pages:
                         text = page.extract_text()
                         if text:
                             raw_text += text + "\n"
-                elif file_ext in [".jpg", ".jpeg", ".png", ".webp"]:
+                    del file_bytes, pdf_file, reader
+                    gc.collect()
+                elif source_type == "image_ocr" or any(ext in title.lower() for ext in [".png", ".jpg", ".jpeg", ".webp"]):
                     from backend.llm import call_groq_vision, compress_image
-                    import base64
                     compressed = compress_image(file_bytes)
+                    del file_bytes
                     img_b64 = base64.b64encode(compressed).decode("utf-8")
+                    del compressed
+                    gc.collect()
                     raw_text = call_groq_vision(
                         "Transcribe all text in this image exactly as written. Preserve paragraphs.",
                         img_b64
                     )
+                    del img_b64
+                    gc.collect()
                 else:
                     raw_text = file_bytes.decode("utf-8")
+                    del file_bytes
+                    gc.collect()
             except Exception as e:
                 print(f"Background notes gen: failed to download/parse original source: {e}")
                 try:
                     supabase.table("sources").update({
-                        "storage_path": f"failed:Failed to download original source document: {str(e)}"
+                        "storage_path": f"failed:Failed to download source: {str(e)}"
                     }).eq("id", generated_note_source_id).execute()
                 except Exception:
                     pass
                 return
-                
+
         note_title = "Study Guide"
         try:
             note_src = supabase.table("sources").select("title").eq("id", generated_note_source_id).execute()
@@ -591,16 +595,25 @@ def generate_notes_background_task(
         # Build a single unified prompt to generate the entire study guide in one pass
         topics_str = ", ".join([f'"{t}"' for t in topics])
         
-        # Retrieve context/RAG for all topics together to enhance accuracy
+        # Retrieve context/RAG for all topics together to enhance accuracy — search all 3 sources
         rag_context = ""
         try:
             context_segments = []
-            for t in topics[:3]: # Search first few major topics to keep context compact
-                chunks = retrieve_merged_context(subject_id, t, user_id, n_results=1, source_filter="all")
-                if chunks:
-                    context_segments.append(chunks[0]['document'])
+            for t in topics[:5]:  # Up to 5 topics
+                chunks = retrieve_merged_context(subject_id, t, user_id, n_results=3, source_filter="all")
+                for c in chunks:
+                    meta = c.get("metadata", {}) or {}
+                    src_name = c.get("source_name", "Resource")
+                    src_type = c.get("source_type", "personal")
+                    if src_type == "global_book":
+                        section = meta.get("section_title", "")
+                        page = meta.get("start_page", "")
+                        label = f"[{src_name}, {section}, p.{page}]"
+                    else:
+                        label = f"[Upload: {src_name}]"
+                    context_segments.append(f"{label}\n{c['document']}")
             if context_segments:
-                rag_context = "\n\n--- ADDITIONAL CONTEXT ---\n" + "\n\n".join(context_segments)
+                rag_context = "\n\n--- RETRIEVED STUDY MATERIAL (USE THIS AS PRIMARY SOURCE) ---\n" + "\n\n---\n".join(context_segments)
         except Exception as rag_err:
             print(f"RAG search failed for unified notes: {rag_err}")
 
@@ -620,7 +633,7 @@ You MUST organize the guide as a tree hierarchy based on the student's resource 
    - Note: If any other selected topics logically belong as children of a parent topic, place them here as sub-topics.
    - You are also encouraged to add new sub-topics that the student might have missed but are necessary to explain the parent topic thoroughly.
 3. **DYNAMIC KEY INFOS (4 to 5 elements per sub-topic)**: For each sub-topic, write a detailed deep-dive explanation. You must dynamically choose and explain **4 to 5 key important elements** (such as syntax, core mechanics, safety rules, design tradeoffs, or common developer mistakes) to make the explanation complete and structured.
-4. **SUB-TOPIC PRACTICE PROBLEMS**: Conclude each sub-topic with a targeted C++ code snippet or exam-style practice question followed immediately by its step-by-step worked solution.
+4. **SUB-TOPIC PRACTICE PROBLEMS**: Conclude each sub-topic with a targeted code snippet or exam-style practice question followed immediately by its step-by-step worked solution.
 5. **HEADING LEVEL RULES**: Only use `##` for parent topics and `###` for sub-topics. NEVER use `####` or lower headings to ensure clean visual layers in the student's viewer.
 
 STRICT Formatting and Semantics Rules:
@@ -628,25 +641,31 @@ STRICT Formatting and Semantics Rules:
 - **DEPTH**: Write detailed, comprehensive explanations for all sub-topics. Do not crop or artificially truncate the explanations; ensure they have complete academic depth.
 - **TABLES**: PROACTIVELY generate detailed markdown comparison tables (with columns, headers, and blank lines before and after) to compare concepts, list attributes, summarize features, or contrast options whenever possible. Aim to include at least one relevant markdown table in almost every section/topic to maximize visual readability.
 - **NO MERMAID**: NEVER use Mermaid code blocks or Mermaid syntax. Instead, visually represent workflows, lifecycles, or processes using a clean, text-based flow diagram using Unicode arrows (e.g. `[Step 1] ➔ [Step 2] ➔ [Step 3]`) or a structured step-by-step nested process layout.
-- **CODE BLOCKS**: All code blocks MUST declare C++ syntax (` ```cpp `) on the opening fence and be well-structured.
+- **CODE BLOCKS**: All code blocks MUST declare their programming language on the opening fence and be well-structured.
 
-STUDENT'S RESOURCE MATERIAL:
-{raw_text[:8000]}
+STUDENT'S UPLOADED SOURCE MATERIAL:
+{raw_text[:6000] if raw_text else "(No raw source available)"}
+
 {rag_context}"""
 
-        from backend.llm import call_groq
+        from backend.llm import call_groq, call_gemini
         full_guide = ""
         try:
             messages = [{"role": "user", "content": prompt}]
-            # Try Groq (using Groq's llama-3.3-70b-versatile model)
-            full_guide = call_groq(messages, model="llama-3.3-70b-versatile", max_tokens=4000)
-        except Exception as e:
-            print(f"Groq primary notes generation failed: {e}. Falling back to Groq 8B...")
+            # Try Gemini first — faster, higher quality, bigger output window
+            full_guide = call_gemini(messages, model="gemini-2.0-flash", max_tokens=8192)
+            print(f"Notes generated via Google Gemini for {generated_note_source_id}")
+        except Exception as gemini_err:
+            print(f"Gemini notes generation failed: {gemini_err}. Falling back to Groq...")
             try:
-                full_guide = call_groq(messages, model="llama-3.1-8b-instant", max_tokens=4000)
-            except Exception as backup_err:
-                print(f"Groq backup notes generation failed: {backup_err}")
-                full_guide = f"# {note_title}\n\n*Error: Failed to generate study notes using Groq API: {str(backup_err)}*"
+                full_guide = call_groq(messages, model="llama-3.3-70b-versatile", max_tokens=4000)
+            except Exception as e:
+                print(f"Groq primary notes generation failed: {e}. Falling back to Groq 8B...")
+                try:
+                    full_guide = call_groq(messages, model="llama-3.1-8b-instant", max_tokens=4000)
+                except Exception as backup_err:
+                    print(f"Groq backup notes generation failed: {backup_err}")
+                    full_guide = f"# {note_title}\n\n*Error: Failed to generate study notes: {str(backup_err)}*"
 
         if not full_guide.startswith("# "):
             full_guide = f"# {note_title}\n\n" + full_guide
@@ -691,6 +710,11 @@ STUDENT'S RESOURCE MATERIAL:
                     )
             except Exception as e:
                 print(f"Chroma DB indexing error for generated guide: {e}")
+                
+        # Free generated guide and chunks from RAM
+        if full_guide:
+            del full_guide
+        gc.collect()
                 
         print(f"Background notes generation completed successfully for {generated_note_source_id}.")
         
@@ -767,18 +791,21 @@ async def analyze_notes_outline(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create database record: {str(e)}")
         
-    # Index original file in background only for PDF (text extraction already done)
+    # Index original file in background only for PDF — pass storage URL not bytes to avoid RAM bloat
     if source_type == "text_pdf":
         from backend.tasks import index_source_task
         background_tasks.add_task(
             index_source_task,
             source_data["id"],
             subject_id,
-            file_content,
+            storage_path,  # URL, not bytes
             file.filename,
             subject.data[0]["chroma_collection_name"],
             source_type
         )
+    
+    # Free the large file bytes now — not needed anymore
+    del file_content
     
     # Call fast LLM to extract key conceptual topics only
     outline_prompt = f"""Analyze the educational text below and identify a list of 3 to 6 major conceptual academic topics. Group similar small or related subtopics together so that the total number of topics is strictly between 3 and 6.
@@ -834,7 +861,8 @@ JSON:"""
     return {
         "source_id": source_data["id"],
         "title": file.filename,
-        "topics": topics
+        "topics": topics,
+        "raw_text": raw_text[:15000] if raw_text else ""  # Pass to trigger to skip re-download
     }
 
 @router.post("/generate-notes/trigger")
@@ -875,7 +903,8 @@ def trigger_notes_generation(
     # 3. Spin off background notes generation using FastAPI's BackgroundTasks pool
     background_tasks.add_task(
         generate_notes_background_task,
-        subject_id, user_id, req.source_id, req.topics, generated_note_data["id"], collection_name
+        subject_id, user_id, req.source_id, req.topics, generated_note_data["id"], collection_name,
+        req.pre_extracted_text or ""  # Pass pre-extracted text to skip costly re-download
     )
     
     return {

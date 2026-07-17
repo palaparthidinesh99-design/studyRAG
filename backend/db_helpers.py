@@ -277,7 +277,11 @@ def filter_active_citations(answer: str, sections_used: list) -> list:
 
     return deduped[:4]
 
+# In-memory cache for resolved book URLs to serve instantly without network calls
+_BOOK_URL_MEMORY_CACHE: Dict[str, str] = {}
+
 def save_book_url(book_id: str, url: str):
+    _BOOK_URL_MEMORY_CACHE[book_id] = url
     mapping_path = "cache/book_urls.json"
     mapping = {}
     if os.path.exists(mapping_path):
@@ -294,6 +298,11 @@ def save_book_url(book_id: str, url: str):
         pass
 
 def get_book_url(book_id: str) -> Optional[str]:
+    # 1. Fastest: in-memory cache (already resolved this session)
+    if book_id in _BOOK_URL_MEMORY_CACHE:
+        return _BOOK_URL_MEMORY_CACHE[book_id]
+    
+    # 2. Local JSON file cache
     mapping_path = "cache/book_urls.json"
     if os.path.exists(mapping_path):
         try:
@@ -301,17 +310,20 @@ def get_book_url(book_id: str) -> Optional[str]:
                 mapping = json.load(f)
                 val = mapping.get(book_id)
                 if val:
+                    _BOOK_URL_MEMORY_CACHE[book_id] = val  # promote to memory cache
                     return val
         except Exception:
             pass
             
-    # Database persistent fallback
+    # 3. Database persistent fallback
     try:
         res = supabase.table("global_books").select("source").eq("id", book_id).execute()
         if res.data and res.data[0].get("source"):
             source_val = res.data[0]["source"]
             if "|" in source_val:
-                return source_val.split("|", 1)[1]
+                url = source_val.split("|", 1)[1]
+                _BOOK_URL_MEMORY_CACHE[book_id] = url  # promote to memory cache
+                return url
     except Exception:
         pass
     return None

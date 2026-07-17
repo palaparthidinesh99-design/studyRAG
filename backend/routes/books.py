@@ -737,6 +737,19 @@ def view_book_pdf_endpoint(
     if not pdf_url:
         raise HTTPException(status_code=404, detail="Book PDF URL could not be found.")
 
+    # FAST PATH: If the cached URL is already a direct CDN link, redirect immediately
+    # without any API calls, DOAB resolution, or HTML scraping
+    _fast_path = urllib.parse.urlparse(pdf_url)
+    _fast_path_clean = _fast_path.path.lower()
+    _is_direct = (
+        _fast_path_clean.endswith(".pdf") or 
+        _fast_path_clean.endswith(".txt") or
+        "oapen.org/rest/bitstreams/" in pdf_url or  # Already resolved OAPEN bitstream
+        "openstax.org/apps/" in pdf_url  # Already resolved OpenStax CDN link
+    )
+    if _is_direct:
+        return RedirectResponse(pdf_url)
+
     # 0. Resolve OpenStax website URLs to direct high-resolution PDF download link dynamically
     if pdf_url and "openstax.org" in pdf_url and not pdf_url.endswith(".pdf"):
         book_res = supabase.table("global_books").select("title").eq("id", global_book_id).execute()

@@ -51,13 +51,16 @@ async def upload_source(
         }).execute()
         source_data = source_insert.data[0]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create database record: {str(e)}")
-        
+        raise HTTPException(status_code=500, detail=f"Failed to create database record: {str(e)}") from e
+    
+    # Free the large file bytes from memory immediately — background task fetches from URL directly
+    del file_content       
+    # Pass Cloudinary URL (not raw bytes) to background task — prevents holding megabytes of binary data in RAM
     background_tasks.add_task(
         index_source_task,
         source_data["id"],
         subject_id,
-        file_content,
+        storage_path,  # Cloudinary URL — task will download it when it runs
         file.filename,
         collection_name,
         source_type

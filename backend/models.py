@@ -10,6 +10,13 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class VerifyEmailRequest(BaseModel):
+    email: str
+    code: str
+
+class ResendCodeRequest(BaseModel):
+    email: str
+
 class CreateSubjectRequest(BaseModel):
     name: str
 

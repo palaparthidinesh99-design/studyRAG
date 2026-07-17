@@ -6,6 +6,52 @@ from fastapi import HTTPException
 from typing import List, Optional
 from backend.config import GROQ_API_KEY, OLLAMA_URL, OLLAMA_API_KEY
 
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+
+def call_gemini(messages: List[dict], model: str = "gemini-2.0-flash", max_tokens: int = 8192) -> str:
+    """Call Google Gemini API for fast, high-quality LLM generation."""
+    if not GOOGLE_API_KEY:
+        raise Exception("GOOGLE_API_KEY not configured")
+    
+    # Convert OpenAI messages format to Gemini format
+    contents = []
+    system_text = ""
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content", "")
+        if role == "system":
+            system_text = content
+        elif role == "user":
+            # Prepend system text to first user message if present
+            if system_text:
+                content = f"{system_text}\n\n{content}"
+                system_text = ""
+            contents.append({"role": "user", "parts": [{"text": content}]})
+        elif role == "assistant":
+            contents.append({"role": "model", "parts": [{"text": content}]})
+    
+    # Append remaining system text if no user message followed
+    if system_text and contents:
+        contents[0]["parts"][0]["text"] = system_text + "\n\n" + contents[0]["parts"][0]["text"]
+    elif system_text:
+        contents.append({"role": "user", "parts": [{"text": system_text}]})
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GOOGLE_API_KEY}"
+    payload = {
+        "contents": contents,
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            "temperature": 0.2
+        }
+    }
+    res = requests.post(url, json=payload, timeout=120)
+    res.raise_for_status()
+    data = res.json()
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError) as e:
+        raise Exception(f"Unexpected Gemini response: {data}")
+
 def call_ollama(endpoint: str, payload: dict) -> requests.Response:
     url = f"{OLLAMA_URL}/{endpoint}"
     headers = {}
