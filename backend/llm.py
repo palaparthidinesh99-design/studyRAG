@@ -132,7 +132,7 @@ def call_ollama_fallback(messages: List[dict], max_tokens: int = 4096) -> str:
         print(f"Ollama fallback failed: {e}")
         raise e
 
-def call_groq(messages: List[dict], model: str = "llama3-8b-8192", max_tokens: int = 4096, temperature: float = 0.2, timeout: int = 12) -> str:
+def call_groq(messages: List[dict], model: str = "llama-3.1-8b-instant", max_tokens: int = 4096, temperature: float = 0.2, timeout: int = 12) -> str:
 
     if not GROQ_API_KEY:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured. Please set it in your environment.")
@@ -154,13 +154,13 @@ def call_groq(messages: List[dict], model: str = "llama3-8b-8192", max_tokens: i
         if isinstance(msg.get("content"), str) and len(msg["content"]) > 12000:
             msg["content"] = msg["content"][:12000] + "\n...[truncated]"
     
-    FALLBACK_MODELS = ["llama-3.3-70b-versatile", "llama3-8b-8192", "mixtral-8x7b-32768"]
+    FALLBACK_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3.6-27b"]
     
     import time
     
     # Try requested model first with automatic retries on rate limits (429) or transient failures
     max_retries = 3
-    retry_delay = 2.0
+    retry_delay = 4.0
     for attempt in range(max_retries):
         try:
             res = requests.post(url, json=payload, headers=headers, timeout=timeout)
@@ -173,8 +173,8 @@ def call_groq(messages: List[dict], model: str = "llama3-8b-8192", max_tokens: i
             return res.json()["choices"][0]["message"]["content"]
         except Exception as primary_err:
             if attempt < max_retries - 1:
-                print(f"Groq primary '{model}' attempt {attempt+1} failed: {primary_err}. Retrying in 1s...")
-                time.sleep(1.0)
+                print(f"Groq primary '{model}' attempt {attempt+1} failed: {primary_err}. Retrying in 2s...")
+                time.sleep(2.0)
                 continue
             print(f"Groq primary '{model}' failed permanently: {primary_err}")
     
@@ -186,7 +186,7 @@ def call_groq(messages: List[dict], model: str = "llama3-8b-8192", max_tokens: i
         if payload.get("max_tokens", 0) > 4000:
             payload["max_tokens"] = 4000
             
-        retry_delay = 2.0
+        retry_delay = 4.0
         for attempt in range(max_retries):
             try:
                 res = requests.post(url, json=payload, headers=headers, timeout=timeout)
@@ -199,8 +199,8 @@ def call_groq(messages: List[dict], model: str = "llama3-8b-8192", max_tokens: i
                 return res.json()["choices"][0]["message"]["content"]
             except Exception as fb_err:
                 if attempt < max_retries - 1:
-                    print(f"Groq fallback '{fallback_model}' attempt {attempt+1} failed: {fb_err}. Retrying in 1s...")
-                    time.sleep(1.0)
+                    print(f"Groq fallback '{fallback_model}' attempt {attempt+1} failed: {fb_err}. Retrying in 2s...")
+                    time.sleep(2.0)
                     continue
                 print(f"Groq fallback '{fallback_model}' failed permanently: {fb_err}")
             
