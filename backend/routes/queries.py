@@ -59,14 +59,20 @@ def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
         
     cleaned_answer = "\n".join(new_lines).strip()
     
+    if not sections_used:
+        return cleaned_answer, []
+
+    # Sort retrieved sections strictly by vector relevance (lowest distance = highest match)
+    sorted_sections = sorted(sections_used, key=lambda s: s.get("distance", 1.0))
+    
     active_sources = []
     seen = set()
     
-    if cited_label and sections_used:
+    if cited_label:
         norm_label = re.sub(r'[^a-zA-Z0-9 ]', ' ', cited_label).lower()
         label_tokens = set(norm_label.split())
         
-        for sec in sections_used:
+        for sec in sorted_sections:
             source_name = sec.get("source_name", "")
             clean_name = clean_source_name(source_name).lower()
             name_tokens = set(re.sub(r'[^a-zA-Z0-9 ]', ' ', clean_name).split())
@@ -89,20 +95,21 @@ def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
                     sec_copy = dict(sec)
                     sec_copy["source_name"] = clean_source_name(source_name)
                     active_sources.append(sec_copy)
-                    
-    if not active_sources and sections_used:
-        for sec in sections_used:
-            source_name = sec.get("source_name", "")
-            key = (sec["source_type"], clean_source_name(source_name), sec.get("section", ""), sec.get("page", ""))
-            if key not in seen:
-                seen.add(key)
-                sec_copy = dict(sec)
-                sec_copy["source_name"] = clean_source_name(source_name)
-                active_sources.append(sec_copy)
-                if len(active_sources) >= 4:
-                    break
-        
-    return cleaned_answer, active_sources
+                    break  # Pick the SINGLE best matching citation!
+
+    # Fallback if LLM tag omitted or didn't match: select the single top best matching section (lowest vector distance)
+    if not active_sources and sorted_sections:
+        best_sec = dict(sorted_sections[0])
+        best_sec["source_name"] = clean_source_name(best_sec.get("source_name", ""))
+        active_sources.append(best_sec)
+
+    # If active_sources contains a valid citation, remove any accidental disclaimer text
+    if active_sources:
+        disclaimer = "Note: No direct matching references found in the uploaded study materials."
+        if disclaimer in cleaned_answer:
+            cleaned_answer = cleaned_answer.replace(disclaimer, "").strip()
+
+    return cleaned_answer, active_sources[:1]
 
 def get_subject_materials_info(subject_id: str, subject_name: str) -> str:
     try:

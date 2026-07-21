@@ -47,11 +47,14 @@ try:
         print("Connecting to local Chroma PersistentClient...")
         chroma_client = chromadb.PersistentClient(path="cache/chroma")
 except Exception as e:
-    print(f"Warning: Failed to initialize Chroma Cloud client: {e}. Falling back to local PersistentClient.")
-    try:
-        chroma_client = chromadb.PersistentClient(path="cache/chroma")
-    except Exception as local_e:
-        print(f"Error: Failed to initialize fallback local Chroma client: {local_e}")
+    print(f"Warning: Failed to initialize Chroma Cloud client: {e}.")
+    if CHROMA_API_KEY:
+        print("Cloud key is set; avoiding local PersistentClient fallback to conserve RAM.")
+    else:
+        try:
+            chroma_client = chromadb.PersistentClient(path="cache/chroma")
+        except Exception as local_e:
+            print(f"Error: Failed to initialize local Chroma client: {local_e}")
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "https://ollama.com/api")
 OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY")
