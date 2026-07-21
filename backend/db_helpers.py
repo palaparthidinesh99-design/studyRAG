@@ -159,10 +159,22 @@ def retrieve_merged_context(subject_id: str, query_text: str, user_id: str, n_re
                 break
         
         if not is_specific_resource:
-            note_check = supabase.table("sources").select("*").eq("id", source_filter).execute()
-            if note_check.data:
-                is_specific_resource = True
-                specific_note_info = note_check.data[0]
+            try:
+                gb_res = supabase.table("global_books").select("id", "title", "chroma_collection_name").eq("id", source_filter).execute()
+                if gb_res.data:
+                    is_specific_resource = True
+                    specific_book_info = gb_res.data[0]
+            except Exception as e:
+                print(f"Error checking global_books for filter {source_filter}: {e}")
+
+        if not is_specific_resource:
+            try:
+                note_check = supabase.table("sources").select("*").eq("id", source_filter).execute()
+                if note_check.data:
+                    is_specific_resource = True
+                    specific_note_info = note_check.data[0]
+            except Exception as e:
+                print(f"Error checking sources for filter {source_filter}: {e}")
                 
     collections_to_query = []
     
@@ -202,6 +214,24 @@ def retrieve_merged_context(subject_id: str, query_text: str, user_id: str, n_re
                     "book_id": b["id"],
                     "specific_source_id": None
                 })
+
+    # Fallback guard: if collections_to_query is empty, default to querying all subject resources
+    if not collections_to_query:
+        collections_to_query.append({
+            "name": collection_name,
+            "type": "personal",
+            "source_name": "Personal Note",
+            "book_id": None,
+            "specific_source_id": None
+        })
+        for b in linked_books_data:
+            collections_to_query.append({
+                "name": b["chroma_collection_name"],
+                "type": "global_book",
+                "source_name": b["title"],
+                "book_id": b["id"],
+                "specific_source_id": None
+            })
         
         pass
             

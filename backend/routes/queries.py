@@ -141,11 +141,16 @@ def query_text(
     try:
         user_res = supabase.table("users").select("hashed_password").eq("id", user_id).execute()
         if user_res.data:
-            parts = user_res.data[0].get("hashed_password", "").split("|", 1)
-            if len(parts) > 1 and parts[1].strip():
-                user_name = parts[1].strip()
+            db_pwd = user_res.data[0].get("hashed_password", "")
+            if "|" in db_pwd:
+                parts = db_pwd.split("|")
+                if len(parts) > 1 and parts[1] and parts[1].strip() not in ["true", "false", "|true|", "supabase_auth"]:
+                    user_name = parts[1].strip()
     except Exception:
         pass
+
+    if not user_name or user_name in ["true", "false", "|true|", "none", "null"]:
+        user_name = "Student"
 
     # Fast intercept for greetings
     greeting_pattern = re.compile(
@@ -353,11 +358,16 @@ async def query_photo(
     try:
         user_res = supabase.table("users").select("hashed_password").eq("id", user_id).execute()
         if user_res.data:
-            parts = user_res.data[0].get("hashed_password", "").split("|", 1)
-            if len(parts) > 1 and parts[1].strip():
-                user_name = parts[1].strip()
+            db_pwd = user_res.data[0].get("hashed_password", "")
+            if "|" in db_pwd:
+                parts = db_pwd.split("|")
+                if len(parts) > 1 and parts[1] and parts[1].strip() not in ["true", "false", "|true|", "supabase_auth"]:
+                    user_name = parts[1].strip()
     except Exception:
         pass
+
+    if not user_name or user_name in ["true", "false", "|true|", "none", "null"]:
+        user_name = "Student"
     
     subject_name = subject.data[0]["name"]
     materials_info = get_subject_materials_info(subject_id, subject_name)

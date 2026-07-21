@@ -118,8 +118,14 @@ def read_current_user(user_id: str = Depends(get_current_user)):
     if user.data:
         u = user.data[0]
         user_email = u.get("email", "")
-        parts = u.get("hashed_password", "").split("|")
-        user_name = parts[1] if len(parts) > 1 else ""
+        db_pwd = u.get("hashed_password", "")
+        if "|" in db_pwd:
+            parts = db_pwd.split("|")
+            if len(parts) > 1 and parts[1] and parts[1].strip() not in ["true", "false", "|true|", "supabase_auth"]:
+                user_name = parts[1].strip()
+
+    if not user_name or user_name in ["true", "false", "|true|", "none", "null"]:
+        user_name = "Student"
 
     return {
         "id": user_id,
