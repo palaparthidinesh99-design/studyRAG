@@ -86,15 +86,16 @@ def index_source_task(
                 batch_size = 100
                 for i in range(0, len(chunks), batch_size):
                     batch_docs = chunks[i:i+batch_size]
-                    # Pre-calculate Gemini embeddings to avoid local ONNX load / CPU bloat
                     embeddings = call_gemini_embeddings(batch_docs)
-                    
-                    collection.add(
-                        ids=ids[i:i+batch_size],
-                        documents=batch_docs,
-                        metadatas=metadatas[i:i+batch_size],
-                        embeddings=embeddings
-                    )
+                    if embeddings:
+                        collection.add(
+                            ids=ids[i:i+batch_size],
+                            documents=batch_docs,
+                            metadatas=metadatas[i:i+batch_size],
+                            embeddings=embeddings
+                        )
+                    else:
+                        print(f"Skipping vector batch {i} because Gemini embeddings were unavailable (RAM protection).")
                 print(f"Background indexing completed successfully for {filename}: {len(chunks)} chunks.")
                 del chunks, ids, metadatas
                 gc.collect()
@@ -261,15 +262,16 @@ def index_catalogue_book_task(global_book_id: str, pdf_url: str, title: str, col
                 batch_size = 100
                 for i in range(0, len(documents), batch_size):
                     batch_docs = documents[i:i+batch_size]
-                    # Pre-calculate Gemini embeddings to avoid local ONNX load / CPU bloat
                     embeddings = call_gemini_embeddings(batch_docs)
-                    
-                    collection.add(
-                        ids=ids[i:i+batch_size],
-                        documents=batch_docs,
-                        metadatas=metadatas[i:i+batch_size],
-                        embeddings=embeddings
-                    )
+                    if embeddings:
+                        collection.add(
+                            ids=ids[i:i+batch_size],
+                            documents=batch_docs,
+                            metadatas=metadatas[i:i+batch_size],
+                            embeddings=embeddings
+                        )
+                    else:
+                        print(f"Skipping book vector batch {i} because Gemini embeddings were unavailable (RAM protection).")
                 print(f"Indexed book {title} successfully: {len(chunks)} chunks.")
                 # Free memory references immediately
                 chunks = None

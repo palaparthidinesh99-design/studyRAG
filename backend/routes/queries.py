@@ -731,31 +731,7 @@ STUDENT'S UPLOADED SOURCE MATERIAL:
             "storage_path": dest_storage_path
         }).eq("id", generated_note_source_id).execute()
         
-        # 7. Chunk and Index in Chroma DB so it is searchable by chatbot
-        chunks = split_into_subchunks(full_guide)
-        if chunks:
-            try:
-                collection = chroma_client.get_or_create_collection(name=collection_name)
-                ids = [f"source_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
-                metadatas = [
-                    {
-                        "source_id": generated_note_source_id,
-                        "source_title": f"AI Notes - {os.path.splitext(title)[0]}",
-                        "chunk_index": i
-                    }
-                    for i in range(len(chunks))
-                ]
-                batch_size = 100
-                for i in range(0, len(chunks), batch_size):
-                    collection.add(
-                        ids=ids[i:i+batch_size],
-                        documents=chunks[i:i+batch_size],
-                        metadatas=metadatas[i:i+batch_size]
-                    )
-            except Exception as e:
-                print(f"Chroma DB indexing error for generated guide: {e}")
-                
-        # Free generated guide and chunks from RAM
+        # 7. Store markdown file directly in Supabase Storage & free RAM (No Chroma ONNX load to prevent Render OOM)
         if full_guide:
             del full_guide
         gc.collect()
