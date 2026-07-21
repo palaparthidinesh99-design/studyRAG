@@ -72,8 +72,9 @@ def index_source_task(
             gc.collect()
 
             if chunks:
+                from backend.db_helpers import NoOpEmbeddingFunction
                 from backend.llm import call_gemini_embeddings
-                collection = chroma_client.get_or_create_collection(name=collection_name)
+                collection = chroma_client.get_or_create_collection(name=collection_name, embedding_function=NoOpEmbeddingFunction())
                 ids = [f"source_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
                 metadatas = [
                     {
@@ -243,8 +244,9 @@ def index_catalogue_book_task(global_book_id: str, pdf_url: str, title: str, col
         # 3. Index in Chroma DB
         if chunks:
             try:
+                from backend.db_helpers import NoOpEmbeddingFunction
                 from backend.llm import call_gemini_embeddings
-                collection = chroma_client.get_or_create_collection(name=collection_name)
+                collection = chroma_client.get_or_create_collection(name=collection_name, embedding_function=NoOpEmbeddingFunction())
                 ids = [f"book_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
                 metadatas = [
                     {

@@ -37,7 +37,8 @@ def create_subject(
             "chroma_collection_name": collection_name,
         }).execute()
         
-        background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name)
+        from backend.db_helpers import NoOpEmbeddingFunction
+        background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name, embedding_function=NoOpEmbeddingFunction())
         return result.data[0]
     except Exception as e:
         print(f"Failed to create subject in database: {e}")
@@ -207,7 +208,9 @@ def save_chat_note(
             chunks = split_into_subchunks(content)
             if not chunks:
                 return
-            collection = chroma_client.get_or_create_collection(name=col_name)
+            from backend.db_helpers import NoOpEmbeddingFunction
+            from backend.llm import call_gemini_embeddings
+            collection = chroma_client.get_or_create_collection(name=col_name, embedding_function=NoOpEmbeddingFunction())
             ids = [f"source_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
             metadatas = [
                 {"source_id": source_id, "source_title": title, "chunk_index": i}
@@ -215,11 +218,15 @@ def save_chat_note(
             ]
             batch_size = 100
             for i in range(0, len(chunks), batch_size):
-                collection.add(
-                    ids=ids[i:i+batch_size],
-                    documents=chunks[i:i+batch_size],
-                    metadatas=metadatas[i:i+batch_size]
-                )
+                batch_docs = chunks[i:i+batch_size]
+                embeddings = call_gemini_embeddings(batch_docs)
+                if embeddings:
+                    collection.add(
+                        ids=ids[i:i+batch_size],
+                        documents=batch_docs,
+                        metadatas=metadatas[i:i+batch_size],
+                        embeddings=embeddings
+                    )
         except Exception as e:
             print(f"Background Chroma indexing error for saved note: {e}")
 

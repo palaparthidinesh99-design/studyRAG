@@ -547,6 +547,7 @@ class TriggerNotesRequest(BaseModel):
     source_id: str
     topics: List[str]
     pre_extracted_text: Optional[str] = None  # Text already extracted during /analyze step
+    custom_title: Optional[str] = None
 
 def generate_notes_background_task(
     subject_id: str,
