@@ -708,7 +708,10 @@ async function handleCreateSubject(event) {
             body: JSON.stringify({ name })
         });
 
-        if (!res.ok) throw new Error("Could not create subject.");
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || "Could not create subject.");
+        }
 
         const newSubj = await res.json();
         closeSubjectModal();
@@ -717,7 +720,7 @@ async function handleCreateSubject(event) {
         selectSubject(newSubj.id);
         showToast("Subject created successfully!", "success");
     } catch (err) {
-        alert(err.message);
+        showToast(err.message, "error");
     }
 }
 

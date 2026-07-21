@@ -37,8 +37,13 @@ def create_subject(
             "chroma_collection_name": collection_name,
         }).execute()
         
-        from backend.db_helpers import NoOpEmbeddingFunction
-        background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name, embedding_function=NoOpEmbeddingFunction())
+        if chroma_client is not None:
+            try:
+                from backend.db_helpers import NoOpEmbeddingFunction
+                background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name, embedding_function=NoOpEmbeddingFunction())
+            except Exception as chroma_err:
+                print(f"Chroma collection creation warning: {chroma_err}")
+
         return result.data[0]
     except Exception as e:
         print(f"Failed to create subject in database: {e}")
