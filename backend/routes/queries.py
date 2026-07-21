@@ -42,7 +42,9 @@ FORMATTING RULES (mandatory):
 def clean_source_name(name: str) -> str:
     if not name:
         return ""
-    return name.replace(".pdf", "").replace("-WEB", "").replace("-web", "").replace("_", " ").strip()
+    c = re.sub(r'\[.*?\]|\(.*?\)', '', name)
+    c = c.replace(".pdf", "").replace("-WEB", "").replace("-web", "").replace("_", " ").strip()
+    return c if c else name.strip()
 
 def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
     cited_label = None
@@ -61,27 +63,44 @@ def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
     seen = set()
     
     if cited_label and sections_used:
-        norm_label = cited_label.replace("[", "").replace("]", "").strip().lower()
+        norm_label = re.sub(r'[^a-zA-Z0-9 ]', ' ', cited_label).lower()
+        label_tokens = set(norm_label.split())
+        
         for sec in sections_used:
             source_name = sec.get("source_name", "")
             clean_name = clean_source_name(source_name).lower()
-            section_name = sec.get("section", "").lower()
-            page_num = str(sec.get("page", ""))
+            name_tokens = set(re.sub(r'[^a-zA-Z0-9 ]', ' ', clean_name).split())
+            name_tokens -= {"by", "openstax", "the", "of", "and", "in", "to", "a"}
             
-            if (clean_name and clean_name in norm_label) or \
-               (section_name and section_name in norm_label) or \
-               (page_num and f"p.{page_num}" in norm_label):
-                key = (sec["source_type"], sec.get("source_id", ""), sec.get("section", ""), sec.get("page", ""))
+            section_name = sec.get("section", "").lower()
+            section_tokens = set(re.sub(r'[^a-zA-Z0-9 ]', ' ', section_name).split())
+            section_tokens -= {"section", "ch", "chapter"}
+            
+            page_str = str(sec.get("page", ""))
+            
+            name_match = bool(name_tokens & label_tokens)
+            sec_match = bool(section_tokens & label_tokens)
+            page_match = bool(page_str and page_str in label_tokens)
+            
+            if name_match or sec_match or page_match:
+                key = (sec["source_type"], clean_source_name(source_name), sec.get("section", ""), sec.get("page", ""))
                 if key not in seen:
                     seen.add(key)
-                    active_sources.append(sec)
-                
+                    sec_copy = dict(sec)
+                    sec_copy["source_name"] = clean_source_name(source_name)
+                    active_sources.append(sec_copy)
+                    
     if not active_sources and sections_used:
-        books_used = [s for s in sections_used if s.get("source_type") == "global_book"]
-        if books_used:
-            active_sources.extend(books_used[:2])
-        else:
-            active_sources.extend(sections_used[:2])
+        for sec in sections_used:
+            source_name = sec.get("source_name", "")
+            key = (sec["source_type"], clean_source_name(source_name), sec.get("section", ""), sec.get("page", ""))
+            if key not in seen:
+                seen.add(key)
+                sec_copy = dict(sec)
+                sec_copy["source_name"] = clean_source_name(source_name)
+                active_sources.append(sec_copy)
+                if len(active_sources) >= 4:
+                    break
         
     return cleaned_answer, active_sources
 
@@ -207,7 +226,7 @@ def query_text(
     for chunk in retrieved:
         doc = chunk["document"]
         meta = chunk["metadata"]
-        source_name = chunk["source_name"]
+        source_name = clean_source_name(chunk["source_name"])
         
         if chunk["source_type"] == "global_book":
             section = meta.get("section_title", "Unknown Section")
@@ -223,7 +242,7 @@ def query_text(
                 "text": doc
             })
         else:
-            source_title = meta.get('source_title', 'Personal Note') if meta else 'Personal Note'
+            source_title = clean_source_name(meta.get('source_title', 'Personal Note') if meta else 'Personal Note')
             source_id = meta.get('source_id', '') if meta else ''
             ref_str = f"[Upload: {source_title}]"
             sections_used.append({
@@ -415,7 +434,7 @@ async def query_photo(
     for chunk in retrieved:
         doc = chunk["document"]
         meta = chunk["metadata"]
-        source_name = chunk["source_name"]
+        source_name = clean_source_name(chunk["source_name"])
         
         if chunk["source_type"] == "global_book":
             section = meta.get("section_title", "Unknown Section")
@@ -431,7 +450,7 @@ async def query_photo(
                 "text": doc
             })
         else:
-            source_title = meta.get('source_title', 'Personal Note') if meta else 'Personal Note'
+            source_title = clean_source_name(meta.get('source_title', 'Personal Note') if meta else 'Personal Note')
             source_id = meta.get('source_id', '') if meta else ''
             ref_str = f"[Upload: {source_title}]"
             sections_used.append({
