@@ -34,3 +34,9 @@ class LinkCatalogueBookRequest(BaseModel):
     title: str
     pdf_url: str
     source: str
+
+class TriggerNotesRequest(BaseModel):
+    source_id: str
+    topics: list[str]
+    pre_extracted_text: Optional[str] = ""
+    custom_title: Optional[str] = None

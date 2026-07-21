@@ -23,7 +23,14 @@ def create_access_token(user_id: str) -> str:
 
 def decode_access_token(token: str) -> Optional[str]:
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        res = supabase.auth.get_user(token)
+        if res and res.user:
+            return res.user.id
+    except Exception as e:
+        pass
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM], options={"verify_aud": False})
         return payload.get("sub")
     except JWTError:
         return None

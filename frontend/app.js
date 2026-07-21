@@ -852,6 +852,8 @@ function openTopicsModal() {
 function closeTopicsModal() {
     document.getElementById("notes-topics-modal").classList.add("hidden");
     document.getElementById("custom-topic-input").value = "";
+    const customTitleInput = document.getElementById("custom-guide-title-input");
+    if (customTitleInput) customTitleInput.value = "";
     currentAnalyzeResult = null;
 }
 
@@ -959,6 +961,9 @@ async function submitNotesTopics(event) {
     startBtn.disabled = true;
     startBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Triggering...`;
 
+    const customTitleInput = document.getElementById("custom-guide-title-input");
+    const customTitle = customTitleInput ? customTitleInput.value.trim() : "";
+
     try {
         const res = await authFetch(`${BASE_URL}/subjects/${state.activeSubjectId}/generate-notes/trigger`, {
             method: "POST",
@@ -966,7 +971,8 @@ async function submitNotesTopics(event) {
             body: JSON.stringify({
                 source_id: currentAnalyzeResult.source_id,
                 topics: selectedTopics,
-                pre_extracted_text: currentAnalyzeResult.raw_text || ""  // Skip re-download on server
+                pre_extracted_text: currentAnalyzeResult.raw_text || "",  // Skip re-download on server
+                custom_title: customTitle
             })
         });
         
@@ -1858,9 +1864,12 @@ function appendMessage(role, text, citations = [], originalQuery = "", queryId =
         const saveBtn = bubble.querySelector(".btn-save-note");
         if (saveBtn) {
             const cleanQuery = String(originalQuery || "").replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 30);
-            const titleStr = cleanQuery ? `QA - ${cleanQuery}` : "Saved Study Note";
+            const defaultTitleStr = cleanQuery ? `QA - ${cleanQuery}` : "Saved Study Note";
             saveBtn.addEventListener("click", () => {
-                saveMessageAsNote(saveBtn, titleStr, text);
+                const userTitle = prompt("Enter a title for your study guide:", defaultTitleStr);
+                if (userTitle !== null && userTitle.trim() !== "") {
+                    saveMessageAsNote(saveBtn, userTitle.trim(), text);
+                }
             });
         }
     }

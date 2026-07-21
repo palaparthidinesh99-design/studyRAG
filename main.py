@@ -34,25 +34,52 @@ def health_check():
 # Authentication Endpoints
 @app.post("/register")
 def register(req: RegisterRequest):
-    existing = supabase.table("users").select("*").eq("email", req.email).execute()
-    if existing.data:
-        raise HTTPException(status_code=400, detail="Email already registered")
+    user_id = None
+    access_token = None
+    try:
+        auth_res = supabase.auth.sign_up({
+            "email": req.email,
+            "password": req.password,
+            "options": {
+                "data": {"name": req.name or ""}
+            }
+        })
+        if auth_res and auth_res.user:
+            user_id = auth_res.user.id
+        if auth_res and auth_res.session:
+            access_token = auth_res.session.access_token
+    except Exception as auth_err:
+        print(f"Supabase Auth sign_up error: {auth_err}")
 
     hashed = hash_password(req.password)
-    # Store with verification status pre-approved: hashed_password|name|true|
     db_password_field = f"{hashed}|{req.name or ''}|true|"
     
-    try:
-        result = supabase.table("users").insert({
+    existing = supabase.table("users").select("*").eq("email", req.email).execute()
+    if existing.data:
+        if not access_token and not user_id:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        db_user = existing.data[0]
+        user_id = db_user["id"]
+    else:
+        user_data = {
             "email": req.email,
             "hashed_password": db_password_field
-        }).execute()
-        user = result.data[0]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+        }
+        if user_id:
+            user_data["id"] = user_id
+            
+        try:
+            result = supabase.table("users").insert(user_data).execute()
+            if result.data:
+                user_id = result.data[0]["id"]
+        except Exception as e:
+            if not user_id:
+                raise HTTPException(status_code=500, detail=f"Failed to create user record: {str(e)}")
 
-    token = create_access_token(user["id"])
-    return {"access_token": token, "token_type": "bearer", "status": "verified"}
+    if not access_token:
+        access_token = create_access_token(user_id)
+        
+    return {"access_token": access_token, "token_type": "bearer", "status": "verified"}
 
 @app.post("/verify-email")
 def verify_email(req: VerifyEmailRequest):
@@ -71,41 +98,53 @@ def resend_code(req: ResendCodeRequest):
 
 @app.post("/login")
 def login(req: LoginRequest):
-    result = supabase.table("users").select("*").eq("email", req.email).execute()
-    if not result.data:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    access_token = None
+    user_id = None
+    
+    try:
+        auth_res = supabase.auth.sign_in_with_password({
+            "email": req.email,
+            "password": req.password
+        })
+        if auth_res and auth_res.session:
+            access_token = auth_res.session.access_token
+            user_id = auth_res.user.id
+    except Exception as auth_err:
+        print(f"Supabase Auth sign_in error: {auth_err}")
 
-    user = result.data[0]
-    db_hashed = user["hashed_password"]
-    parts = db_hashed.split("|")
-    hashed_password = parts[0]
+    if not access_token:
+        result = supabase.table("users").select("*").eq("email", req.email).execute()
+        if not result.data:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    if not verify_password(req.password, hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        user = result.data[0]
+        db_hashed = user["hashed_password"]
+        parts = db_hashed.split("|")
+        hashed_password = parts[0]
 
-    token = create_access_token(user["id"])
-    return {"access_token": token, "token_type": "bearer"}
+        if not verify_password(req.password, hashed_password):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        access_token = create_access_token(user["id"])
+
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/me")
 def read_current_user(user_id: str = Depends(get_current_user)):
+    user_email = ""
+    user_name = ""
+    
     user = supabase.table("users").select("id", "email", "hashed_password").eq("id", user_id).execute()
-    if not user.data:
-        raise HTTPException(status_code=401, detail="User not found")
-    
-    u = user.data[0]
-    parts = u.get("hashed_password", "").split("|")
-    name = parts[1] if len(parts) > 1 else ""
-    
+    if user.data:
+        u = user.data[0]
+        user_email = u.get("email", "")
+        parts = u.get("hashed_password", "").split("|")
+        user_name = parts[1] if len(parts) > 1 else ""
+
     return {
-        "id": u["id"],
-        "email": u["email"],
-        "name": name
-    }
-    
-    return {
-        "id": u["id"],
-        "email": u["email"],
-        "name": name
+        "id": user_id,
+        "email": user_email,
+        "name": user_name
     }
 
 # Register modular sub-routers

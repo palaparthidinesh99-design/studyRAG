@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from backend.config import supabase, chroma_client
 from backend.auth import get_current_user
-from backend.models import QueryTextRequest
+from backend.models import QueryTextRequest, TriggerNotesRequest
 from backend.llm import call_groq, call_groq_vision, compress_image
 from backend.db_helpers import retrieve_merged_context
 from backend.processors import split_into_subchunks
@@ -39,6 +39,11 @@ FORMATTING RULES (mandatory):
   Examples: CITED_SOURCE: [Philosophy, Introduction, p.212] or CITED_SOURCE: [Upload: MyNotes]
 """
 
+def clean_source_name(name: str) -> str:
+    if not name:
+        return ""
+    return name.replace(".pdf", "").replace("-WEB", "").replace("-web", "").replace("_", " ").strip()
+
 def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
     cited_label = None
     new_lines = []
@@ -53,20 +58,30 @@ def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
     cleaned_answer = "\n".join(new_lines).strip()
     
     active_sources = []
+    seen = set()
+    
     if cited_label and sections_used:
         norm_label = cited_label.replace("[", "").replace("]", "").strip().lower()
         for sec in sections_used:
-            if sec["source_type"] == "global_book":
-                ref_str = f"{sec['source_name']}, {sec['section']}, p.{sec['page']}"
-            else:
-                ref_str = f"Upload: {sec['source_name']}"
-                
-            if norm_label in ref_str.lower() or ref_str.lower() in norm_label:
-                active_sources.append(sec)
-                break
+            source_name = sec.get("source_name", "")
+            clean_name = clean_source_name(source_name).lower()
+            section_name = sec.get("section", "").lower()
+            page_num = str(sec.get("page", ""))
+            
+            if (clean_name and clean_name in norm_label) or \
+               (section_name and section_name in norm_label) or \
+               (page_num and f"p.{page_num}" in norm_label):
+                key = (sec["source_type"], sec.get("source_id", ""), sec.get("section", ""), sec.get("page", ""))
+                if key not in seen:
+                    seen.add(key)
+                    active_sources.append(sec)
                 
     if not active_sources and sections_used:
-        active_sources.append(sections_used[0])
+        books_used = [s for s in sections_used if s.get("source_type") == "global_book"]
+        if books_used:
+            active_sources.extend(books_used[:2])
+        else:
+            active_sources.extend(sections_used[:2])
         
     return cleaned_answer, active_sources
 
@@ -183,7 +198,7 @@ def query_text(
         retrieval_text = f"{req.query} {questions_list[-1]}"
         
     retrieved = retrieve_merged_context(subject_id, retrieval_text, user_id, n_results=8, source_filter=req.source_filter or "all")
-    RELEVANCE_THRESHOLD = 1.95
+    RELEVANCE_THRESHOLD = 3.5
     retrieved = [c for c in retrieved if c.get("distance", 0.0) <= RELEVANCE_THRESHOLD]
     
     context_parts = []
@@ -818,13 +833,13 @@ async def analyze_notes_outline(
     del file_content
     
     # Call fast LLM to extract key conceptual topics only
-    outline_prompt = f"""Analyze the educational text below and identify a list of at least 10 major conceptual academic topics.
-    
+    outline_prompt = f"""Analyze the educational text below and extract the main conceptual academic topics directly covered in the material.
+
 CRITICAL RULES:
-1. STRICT REQUIREMENT (AT LEAST 10 TOPICS): The final list length MUST be at least 10. Do not merge too many topics; list all key subtopics separately so there are at least 10.
-2. CHRONOLOGICAL ORDER: Keep them in the exact order they appear in the text.
-3. Return ONLY a valid JSON list of strings, e.g. ["Topic A", "Topic B", "Topic C", "Topic D", "Topic E", "Topic F", "Topic G", "Topic H", "Topic I", "Topic J"]. Do not return markdown, preamble, or formatting blocks.
-4. If the text is short, identify and split subtopics/subsections separately to ensure you meet the 10 topic minimum.
+1. TRUTHFULNESS & ACCURACY: Extract ONLY the genuine topics explicitly discussed in the text below. Do NOT invent, assume, or hallucinate outside topics that are not in the material.
+2. NATURAL TOPICS: Do not enforce artificial limits. Extract as many or as few main topics as are actually present in the text.
+3. CHRONOLOGICAL ORDER: Keep the topics in the exact order they appear in the text.
+4. JSON FORMAT: Return ONLY a valid JSON list of strings representing the topic titles, e.g. ["Topic A", "Topic B", "Topic C"]. Do not return markdown formatting, preamble, or commentary.
 
 TEXT:
 {raw_text[:12000]}
@@ -893,7 +908,11 @@ def trigger_notes_generation(
     if not src_res.data:
         raise HTTPException(status_code=404, detail="Original source document not found.")
         
-    title = f"AI Notes - {os.path.splitext(src_res.data[0]['title'])[0]}"
+    if req.custom_title and req.custom_title.strip():
+        custom = req.custom_title.strip()
+        title = custom if custom.startswith("AI Notes -") else f"AI Notes - {custom}"
+    else:
+        title = f"AI Notes - {os.path.splitext(src_res.data[0]['title'])[0]}"
     
     # 2. Create the placeholder generated source with a processing status in storage_path
     task_uuid = uuid.uuid4().hex
