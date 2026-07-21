@@ -56,13 +56,18 @@ def register(req: RegisterRequest):
 
     try:
         db_field = f"supabase_auth|{req.name or ''}|true|"
-        supabase.table("users").insert({
+        supabase.table("users").upsert({
             "id": user_id,
             "email": req.email,
             "hashed_password": db_field
         }).execute()
     except Exception as e:
         print(f"User sync to public.users table: {e}")
+
+    try:
+        supabase.auth.admin.update_user_by_id(user_id, {"email_confirm": True})
+    except Exception:
+        pass
 
     if not access_token:
         try:
@@ -72,10 +77,16 @@ def register(req: RegisterRequest):
             })
             if login_res and login_res.session:
                 access_token = login_res.session.access_token
-        except Exception:
-            pass
+        except Exception as login_err:
+            print(f"Post-register auto-login attempt: {login_err}")
 
-    return {"access_token": access_token or "", "token_type": "bearer", "status": "verified"}
+    if not access_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Registration succeeded, but session could not be retrieved. Please log in."
+        )
+
+    return {"access_token": access_token, "token_type": "bearer", "status": "verified"}
 
 @app.post("/verify-email")
 def verify_email(req: VerifyEmailRequest):

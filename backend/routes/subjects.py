@@ -18,14 +18,30 @@ def create_subject(
 ):
     collection_name = f"subject_{uuid.uuid4().hex}"
     
-    result = supabase.table("subjects").insert({
-        "user_id": user_id,
-        "name": req.name,
-        "chroma_collection_name": collection_name,
-    }).execute()
-    
-    background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name)
-    return result.data[0]
+    # Ensure public.users table contains a row for user_id to satisfy foreign key constraint
+    try:
+        user_check = supabase.table("users").select("id").eq("id", user_id).execute()
+        if not user_check.data:
+            supabase.table("users").upsert({
+                "id": user_id,
+                "email": "user@supabase.auth",
+                "hashed_password": "supabase_auth||true|"
+            }).execute()
+    except Exception as sync_e:
+        print(f"Sync public.users on subject creation: {sync_e}")
+
+    try:
+        result = supabase.table("subjects").insert({
+            "user_id": user_id,
+            "name": req.name,
+            "chroma_collection_name": collection_name,
+        }).execute()
+        
+        background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name)
+        return result.data[0]
+    except Exception as e:
+        print(f"Failed to create subject in database: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create subject: {str(e)}")
 
 @router.get("")
 def list_subjects(user_id: str = Depends(get_current_user)):
