@@ -240,14 +240,14 @@ def query_text(
 
     retrieval_text = req.query.strip()
         
-    retrieved = retrieve_merged_context(subject_id, retrieval_text, user_id, n_results=8, source_filter=req.source_filter or "all")
+    retrieved = retrieve_merged_context(subject_id, retrieval_text, user_id, n_results=3, source_filter=req.source_filter or "all")
     RELEVANCE_THRESHOLD = 3.5
-    retrieved = [c for c in retrieved if c.get("distance", 0.0) <= RELEVANCE_THRESHOLD]
+    retrieved = [c for c in retrieved if c.get("distance", 0.0) <= RELEVANCE_THRESHOLD][:3]
     
     context_parts = []
     sections_used = []
     
-    for chunk in retrieved:
+    for idx, chunk in enumerate(retrieved, 1):
         doc = chunk["document"]
         meta = chunk["metadata"]
         source_name = clean_source_name(chunk["source_name"])
@@ -255,8 +255,9 @@ def query_text(
         if chunk["source_type"] == "global_book":
             section = meta.get("section_title", "Unknown Section")
             page = meta.get("start_page", "Unknown")
-            ref_str = f"[{source_name}, {section}, p.{page}]"
+            ref_str = f"PASSAGE {idx}: [{source_name}, {section}, p.{page}]"
             sections_used.append({
+                "passage_index": idx,
                 "source_type": "global_book",
                 "source_name": source_name,
                 "source_id": chunk.get("book_id", ""),
@@ -268,8 +269,9 @@ def query_text(
         else:
             source_title = clean_source_name(meta.get('source_title', 'Personal Note') if meta else 'Personal Note')
             source_id = meta.get('source_id', '') if meta else ''
-            ref_str = f"[Upload: {source_title}]"
+            ref_str = f"PASSAGE {idx}: [Upload: {source_title}]"
             sections_used.append({
+                "passage_index": idx,
                 "source_type": meta.get('source_type', 'personal') if meta else 'personal',
                 "source_name": source_title,
                 "source_id": source_id,
@@ -279,7 +281,6 @@ def query_text(
         context_parts.append(f"{ref_str}\n{doc}")
         
     context = "\n\n---\n\n".join(context_parts)
-    # Truncate context to avoid Groq 413 Payload Too Large errors (cap at ~6000 chars)
     if len(context) > 6000:
         context = context[:6000] + "\n...[context truncated for length]..."
     if context:
@@ -291,7 +292,7 @@ def query_text(
     if "explain in depth" in req.query.lower() or "explain in-depth" in req.query.lower():
         explain_depth_instruction = "- The student explicitly asked for in-depth explanation. Be thorough, include mechanism, worked examples, and edge cases.\n"
 
-    prompt = f"""Use the retrieved study material below to answer the student's question.
+    prompt = f"""Use the top retrieved study passages below to answer the student's question.
 
 STUDY ENVIRONMENT DETAILS:
 {materials_info}
@@ -299,12 +300,13 @@ STUDY ENVIRONMENT DETAILS:
 {context_block}
 
 INSTRUCTIONS:
-- The student's name is '{user_name}'. Address or mention the student by their name '{user_name}' occasionally in a natural, warm, and friendly tutor-like tone (e.g. 'Good question, {user_name}!', 'Let's check this out, {user_name}...').
-- You MUST read all passages in the context block above and find the one most relevant to the question.
-- If a relevant passage exists, base your answer directly on it — paraphrase, explain, and expand from that content.
-- Do NOT include raw citation labels like [Book, Section, p.X] inline in your answer body. Only in CITED_SOURCE at the end.
-- Whenever comparing concepts, listing properties, summarizing data, or detailing variations, organize the information in beautiful markdown tables to keep your explanation clean, visual, and highly structured.
-- If the context block says "No relevant material found" or contains no matching context, answer the question using your general academic knowledge, ensuring your explanation is customized and styled to fit the active subject '{subject_name}'. At the very end of your response (and ONLY at the end), add a single short line: 'Note: No direct matching references found in the uploaded study materials.'
+- The student's name is '{user_name}'. Address or mention the student by their name '{user_name}' naturally in a warm, friendly tutor tone (e.g. 'Good question, {user_name}!').
+- CRITICAL DECISION TASK: Read the top 3 passages above carefully. Compare them against the student's question '{req.query}'. DECIDE WHICH PASSAGE IS THE SINGLE BEST MATCH FOR THIS QUESTION.
+- Base your explanation directly on that winning passage.
+- Do NOT include raw citation labels like [Book, Section, p.X] inline in your explanation text.
+- At the VERY END of your response (on a new line), output the exact citation tag of the winning passage:
+  CITED_SOURCE: [Winning Source Title, Section Name, p.PageNumber]
+- Whenever comparing concepts, listing properties, or summarizing data, organize the information in clean markdown tables.
 {explain_depth_instruction}
 Student's Question: {req.query}
 """

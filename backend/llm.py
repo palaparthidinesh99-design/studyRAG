@@ -46,64 +46,41 @@ def generate_fallback_embedding(text: str, dim: int = 384) -> List[float]:
     return vec.tolist()
 
 def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
-    """Generate high-quality vector embeddings using Google Gemini API with key rotation."""
-    current_key = get_current_gemini_key()
-    if not current_key:
-        print("Warning: GOOGLE_API_KEY is not configured.")
-        return None
-        
-    try:
-        embeddings = []
-        batch_size = 50
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i+batch_size]
-            requests_payload = []
-            for t in batch_texts:
-                t_clean = t.strip() if t else "empty"
-                if not t_clean:
-                    t_clean = "empty"
-                requests_payload.append({
-                    "model": "models/gemini-embedding-001",
-                    "content": {
-                        "parts": [{"text": t_clean}]
-                    },
-                    "outputDimensionality": 384
-                })
-                
-            res_data = None
-            for attempt in range(2):
-                active_key = get_current_gemini_key()
-                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-embedding-001:batchEmbedContents?key={active_key}"
-                try:
-                    res = requests.post(url, json={"requests": requests_payload}, timeout=1.0)
-                    if res.status_code == 429:
-                        rotate_gemini_key()
-                        continue
-                    res.raise_for_status()
-                    res_data = res.json()
-                    break
-                except Exception:
-                    rotate_gemini_key()
-                    continue
+    """Generate 384-dimensional vector embeddings cleanly with fallback resilience."""
+    if not texts:
+        return []
 
-            if not res_data or "embeddings" not in res_data:
-                print(f"Gemini 429 rate limit: using fallback vector embedding generator for batch.")
+    active_key = get_current_gemini_key()
+    if active_key:
+        try:
+            embeddings = []
+            batch_size = 50
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i:i+batch_size]
+                payload = []
                 for t in batch_texts:
-                    embeddings.append(generate_fallback_embedding(t))
-                continue
-
-            for emb_obj in res_data.get("embeddings", []):
-                embeddings.append(emb_obj.get("values", []))
-
-            time.sleep(0.2)
+                    t_clean = t.strip() if t else "empty"
+                    payload.append({
+                        "model": "models/gemini-embedding-001",
+                        "content": {"parts": [{"text": t_clean}]},
+                        "outputDimensionality": 384
+                    })
                 
-        if len(embeddings) == len(texts):
-            return embeddings
-        else:
-            return [generate_fallback_embedding(t) for t in texts]
-    except Exception as e:
-        print(f"Warning: Gemini embedding generation failed ({e}). Using fallback embeddings.")
-        return [generate_fallback_embedding(t) for t in texts]
+                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-embedding-001:batchEmbedContents?key={active_key}"
+                res = requests.post(url, json={"requests": payload}, timeout=2.5)
+                if res.status_code == 200:
+                    res_data = res.json()
+                    for emb_obj in res_data.get("embeddings", []):
+                        embeddings.append(emb_obj.get("values", []))
+                else:
+                    rotate_gemini_key()
+                    
+            if len(embeddings) == len(texts):
+                return embeddings
+        except Exception as e:
+            print(f"Gemini embedding notice: {e}")
+
+    return [generate_fallback_embedding(t) for t in texts]
 
 def call_gemini(messages: List[dict], model: str = "gemini-2.0-flash", max_tokens: int = 8192) -> str:
     """Call Google Gemini API for fast, high-quality LLM generation with key rotation."""
