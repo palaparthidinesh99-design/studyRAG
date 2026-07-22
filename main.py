@@ -34,26 +34,49 @@ def health_check():
 # Authentication Endpoints
 @app.post("/register")
 def register(req: RegisterRequest):
+    user_id = None
+    access_token = None
+
+    # 1. Primary path: Use Supabase Admin API (bypasses email rate limits, zero email confirmation sent)
     try:
-        auth_res = supabase.auth.sign_up({
+        admin_res = supabase.auth.admin.create_user({
             "email": req.email,
             "password": req.password,
-            "options": {
-                "data": {"name": req.name or ""}
-            }
+            "email_confirm": True,
+            "user_metadata": {"name": req.name or ""}
         })
-    except Exception as auth_err:
-        err_msg = str(auth_err)
-        if "already registered" in err_msg.lower() or "already exists" in err_msg.lower():
+        if admin_res and admin_res.user:
+            user_id = admin_res.user.id
+    except Exception as admin_err:
+        err_msg = str(admin_err)
+        if "already registered" in err_msg.lower() or "already exists" in err_msg.lower() or "already has been taken" in err_msg.lower():
             raise HTTPException(status_code=400, detail="Email already registered")
-        raise HTTPException(status_code=400, detail=f"Registration failed: {err_msg}")
+        print(f"Admin create_user notice: {admin_err}")
 
-    if not auth_res or not auth_res.user:
-        raise HTTPException(status_code=400, detail="Failed to register user with Supabase Auth.")
+    # 2. Fallback path: Standard sign_up if admin method is unavailable
+    if not user_id:
+        try:
+            auth_res = supabase.auth.sign_up({
+                "email": req.email,
+                "password": req.password,
+                "options": {
+                    "data": {"name": req.name or ""}
+                }
+            })
+            if auth_res and auth_res.user:
+                user_id = auth_res.user.id
+                if auth_res.session:
+                    access_token = auth_res.session.access_token
+        except Exception as auth_err:
+            err_msg = str(auth_err)
+            if "already registered" in err_msg.lower() or "already exists" in err_msg.lower():
+                raise HTTPException(status_code=400, detail="Email already registered")
+            raise HTTPException(status_code=400, detail=f"Registration failed: {err_msg}")
 
-    user_id = auth_res.user.id
-    access_token = auth_res.session.access_token if auth_res.session else None
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Failed to register user.")
 
+    # 3. Sync user metadata to public.users table
     try:
         db_field = f"supabase_auth|{req.name or ''}|true|"
         supabase.table("users").upsert({
@@ -64,11 +87,7 @@ def register(req: RegisterRequest):
     except Exception as e:
         print(f"User sync to public.users table: {e}")
 
-    try:
-        supabase.auth.admin.update_user_by_id(user_id, {"email_confirm": True})
-    except Exception:
-        pass
-
+    # 4. Immediate auto-login to obtain session access token
     if not access_token:
         try:
             login_res = supabase.auth.sign_in_with_password({
