@@ -129,8 +129,18 @@ def login(req: LoginRequest):
             "email": req.email,
             "password": req.password
         })
-        if not auth_res or not auth_res.session:
+        if not auth_res or not auth_res.session or not auth_res.user:
             raise HTTPException(status_code=401, detail="Invalid email or password")
+            
+        try:
+            supabase_admin.table("users").upsert({
+                "id": auth_res.user.id,
+                "email": req.email,
+                "hashed_password": "supabase_auth||true|"
+            }).execute()
+        except Exception as sync_e:
+            print(f"Sync public.users on login: {sync_e}")
+
         return {"access_token": auth_res.session.access_token, "token_type": "bearer"}
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid email or password")
