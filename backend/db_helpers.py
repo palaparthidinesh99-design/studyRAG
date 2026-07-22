@@ -82,19 +82,15 @@ def rank_and_filter_resources(query_text: str, collections_list: list) -> list:
 
     return collections_list[:2]
 
-class NoOpEmbeddingFunction:
-    def __call__(self, input):
-        return []
-
 _CHROMA_COLLECTIONS_CACHE = {}
 
 def get_cached_collection(name: str):
     if name not in _CHROMA_COLLECTIONS_CACHE:
         try:
-            col = chroma_client.get_collection(name=name, embedding_function=NoOpEmbeddingFunction())
+            col = chroma_client.get_collection(name=name)
             _CHROMA_COLLECTIONS_CACHE[name] = col
         except Exception:
-            col = chroma_client.get_or_create_collection(name=name, embedding_function=NoOpEmbeddingFunction())
+            col = chroma_client.get_or_create_collection(name=name)
             _CHROMA_COLLECTIONS_CACHE[name] = col
     return _CHROMA_COLLECTIONS_CACHE[name]
 

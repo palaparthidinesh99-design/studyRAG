@@ -35,26 +35,25 @@ CHROMA_TENANT = os.environ.get("CHROMA_TENANT", "").strip("'\"")
 CHROMA_DATABASE = os.environ.get("CHROMA_DATABASE", "studyRag").strip("'\"")
 
 chroma_client = None
-try:
-    if CHROMA_API_KEY:
-        print("Connecting to Chroma Cloud...")
-        chroma_client = chromadb.CloudClient(
-            api_key=CHROMA_API_KEY,
-            tenant=CHROMA_TENANT,
-            database=CHROMA_DATABASE,
-        )
-    else:
-        print("Connecting to local Chroma PersistentClient...")
-        chroma_client = chromadb.PersistentClient(path="cache/chroma")
-except Exception as e:
-    print(f"Warning: Failed to initialize Chroma Cloud client: {e}.")
-    if CHROMA_API_KEY:
-        print("Cloud key is set; avoiding local PersistentClient fallback to conserve RAM.")
-    else:
+if CHROMA_API_KEY:
+    print("Connecting to Chroma Cloud...")
+    for attempt in range(3):
         try:
-            chroma_client = chromadb.PersistentClient(path="cache/chroma")
-        except Exception as local_e:
-            print(f"Error: Failed to initialize local Chroma client: {local_e}")
+            chroma_client = chromadb.CloudClient(
+                api_key=CHROMA_API_KEY,
+                tenant=CHROMA_TENANT,
+                database=CHROMA_DATABASE,
+            )
+            break
+        except Exception as e:
+            print(f"Warning: Attempt {attempt+1} failed to initialize Chroma Cloud client: {e}.")
+            time.sleep(1.5)
+else:
+    print("Connecting to local Chroma PersistentClient...")
+    try:
+        chroma_client = chromadb.PersistentClient(path="cache/chroma")
+    except Exception as local_e:
+        print(f"Error: Failed to initialize local Chroma client: {local_e}")
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "https://ollama.com/api")
 OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY")

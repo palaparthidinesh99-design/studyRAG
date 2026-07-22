@@ -6,26 +6,43 @@ from fastapi import HTTPException
 from typing import List, Optional
 from backend.config import GROQ_API_KEY, OLLAMA_URL, OLLAMA_API_KEY
 
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+raw_keys = []
+for env_name in ["GOOGLE_API_KEY", "GOOGLE_API_KEY_2", "GOOGLE_API_KEY_3", "GEMINI_API_KEY"]:
+    val = os.environ.get(env_name, "")
+    if val:
+        raw_keys.extend([k.strip() for k in val.split(",") if k.strip()])
+
+GOOGLE_API_KEYS = list(dict.fromkeys(raw_keys))
+_KEY_INDEX = 0
+
+def get_current_gemini_key() -> str:
+    global _KEY_INDEX
+    if not GOOGLE_API_KEYS:
+        return ""
+    key = GOOGLE_API_KEYS[_KEY_INDEX % len(GOOGLE_API_KEYS)]
+    return key
+
+def rotate_gemini_key():
+    global _KEY_INDEX
+    if GOOGLE_API_KEYS:
+        _KEY_INDEX = (_KEY_INDEX + 1) % len(GOOGLE_API_KEYS)
+
+import time
 
 def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
-    """Generate high-quality vector embeddings using Google Gemini API.
-    
-    Returns a list of embedding vectors (floats), or None if the API key is not configured or fails.
-    """
-    if not GOOGLE_API_KEY:
-        print("Warning: GOOGLE_API_KEY is not configured. Falling back to default Chroma embedding function.")
+    """Generate high-quality vector embeddings using Google Gemini API with key rotation."""
+    current_key = get_current_gemini_key()
+    if not current_key:
+        print("Warning: GOOGLE_API_KEY is not configured.")
         return None
         
     try:
         embeddings = []
-        # Batch requests to Google API (limit 100 content elements per batch)
-        batch_size = 100
+        batch_size = 50
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i:i+batch_size]
             requests_payload = []
             for t in batch_texts:
-                # Sanitize text
                 t_clean = t.strip() if t else "empty"
                 if not t_clean:
                     t_clean = "empty"
@@ -37,16 +54,29 @@ def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
                     "outputDimensionality": 384
                 })
                 
-            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-embedding-001:batchEmbedContents?key={GOOGLE_API_KEY}"
-            res = requests.post(url, json={
-                "requests": requests_payload
-            }, timeout=30)
-            res.raise_for_status()
-            res_data = res.json()
-            
-            # Extract embeddings
+            res_data = None
+            for attempt in range(5):
+                active_key = get_current_gemini_key()
+                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-embedding-001:batchEmbedContents?key={active_key}"
+                res = requests.post(url, json={"requests": requests_payload}, timeout=45)
+                if res.status_code == 429:
+                    rotate_gemini_key()
+                    wait_time = (attempt + 1) * 1.5
+                    print(f"Gemini embedding 429 rate limited. Rotated key and retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                res.raise_for_status()
+                res_data = res.json()
+                break
+
+            if not res_data or "embeddings" not in res_data:
+                print(f"Failed to get Gemini embeddings for batch starting at index {i} after retries.")
+                return None
+
             for emb_obj in res_data.get("embeddings", []):
                 embeddings.append(emb_obj.get("values", []))
+
+            time.sleep(0.2)
                 
         if len(embeddings) == len(texts):
             return embeddings
@@ -54,15 +84,15 @@ def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
             print(f"Warning: Gemini embedding count mismatch: expected {len(texts)}, got {len(embeddings)}")
             return None
     except Exception as e:
-        print(f"Warning: Gemini embedding generation failed: {e}. Falling back to default Chroma embedding function.")
+        print(f"Warning: Gemini embedding generation failed: {e}.")
         return None
 
 def call_gemini(messages: List[dict], model: str = "gemini-2.0-flash", max_tokens: int = 8192) -> str:
-    """Call Google Gemini API for fast, high-quality LLM generation."""
-    if not GOOGLE_API_KEY:
+    """Call Google Gemini API for fast, high-quality LLM generation with key rotation."""
+    key = get_current_gemini_key()
+    if not key:
         raise Exception("GOOGLE_API_KEY not configured")
     
-    # Convert OpenAI messages format to Gemini format
     contents = []
     system_text = ""
     for msg in messages:
@@ -71,7 +101,6 @@ def call_gemini(messages: List[dict], model: str = "gemini-2.0-flash", max_token
         if role == "system":
             system_text = content
         elif role == "user":
-            # Prepend system text to first user message if present
             if system_text:
                 content = f"{system_text}\n\n{content}"
                 system_text = ""
@@ -79,13 +108,11 @@ def call_gemini(messages: List[dict], model: str = "gemini-2.0-flash", max_token
         elif role == "assistant":
             contents.append({"role": "model", "parts": [{"text": content}]})
     
-    # Append remaining system text if no user message followed
     if system_text and contents:
         contents[0]["parts"][0]["text"] = system_text + "\n\n" + contents[0]["parts"][0]["text"]
     elif system_text:
         contents.append({"role": "user", "parts": [{"text": system_text}]})
     
-    url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={GOOGLE_API_KEY}"
     payload = {
         "contents": contents,
         "generationConfig": {
@@ -93,13 +120,29 @@ def call_gemini(messages: List[dict], model: str = "gemini-2.0-flash", max_token
             "temperature": 0.2
         }
     }
-    res = requests.post(url, json=payload, timeout=120)
-    res.raise_for_status()
-    data = res.json()
-    try:
-        return data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError) as e:
-        raise Exception(f"Unexpected Gemini response: {data}")
+    
+    res = None
+    for attempt in range(5):
+        active_key = get_current_gemini_key()
+        url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={active_key}"
+        res = requests.post(url, json=payload, timeout=120)
+        if res.status_code == 429:
+            rotate_gemini_key()
+            time.sleep((attempt + 1) * 1.5)
+            continue
+        res.raise_for_status()
+        break
+
+    if not res:
+        raise Exception("Gemini API rate limited after retries")
+
+    res_data = res.json()
+    candidates = res_data.get("candidates", [])
+    if candidates and "content" in candidates[0]:
+        parts = candidates[0]["content"].get("parts", [])
+        if parts:
+            return parts[0].get("text", "")
+    raise Exception(f"Unexpected Gemini response: {res_data}")
 
 def call_ollama(endpoint: str, payload: dict) -> requests.Response:
     url = f"{OLLAMA_URL}/{endpoint}"

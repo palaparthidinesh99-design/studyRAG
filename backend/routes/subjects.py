@@ -39,8 +39,7 @@ def create_subject(
         
         if chroma_client is not None:
             try:
-                from backend.db_helpers import NoOpEmbeddingFunction
-                background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name, embedding_function=NoOpEmbeddingFunction())
+                background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name)
             except Exception as chroma_err:
                 print(f"Chroma collection creation warning: {chroma_err}")
 
@@ -208,39 +207,4 @@ def save_chat_note(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create source record: {str(e)}")
 
-    def index_note_chunks(content: str, source_id: str, title: str, col_name: str):
-        try:
-            chunks = split_into_subchunks(content)
-            if not chunks:
-                return
-            from backend.db_helpers import NoOpEmbeddingFunction
-            from backend.llm import call_gemini_embeddings
-            collection = chroma_client.get_or_create_collection(name=col_name, embedding_function=NoOpEmbeddingFunction())
-            ids = [f"source_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
-            metadatas = [
-                {"source_id": source_id, "source_title": title, "chunk_index": i}
-                for i in range(len(chunks))
-            ]
-            batch_size = 100
-            for i in range(0, len(chunks), batch_size):
-                batch_docs = chunks[i:i+batch_size]
-                embeddings = call_gemini_embeddings(batch_docs)
-                if embeddings:
-                    collection.add(
-                        ids=ids[i:i+batch_size],
-                        documents=batch_docs,
-                        metadatas=metadatas[i:i+batch_size],
-                        embeddings=embeddings
-                    )
-        except Exception as e:
-            print(f"Background Chroma indexing error for saved note: {e}")
-
-    background_tasks.add_task(
-        index_note_chunks,
-        req.content,
-        source_data["id"],
-        req.title,
-        collection_name
-    )
-            
-    return {"message": "Note saved and indexed", "source": source_data}
+    return {"message": "Note saved successfully", "source": source_data}
