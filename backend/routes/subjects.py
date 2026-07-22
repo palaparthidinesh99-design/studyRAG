@@ -31,7 +31,7 @@ def create_subject(
         if not user_check.data:
             supabase_admin.table("users").upsert({
                 "id": user_id,
-                "email": "user@supabase.auth",
+                "email": f"user_{user_id}@supabase.auth",
                 "hashed_password": "supabase_auth||true|"
             }).execute()
     except Exception as sync_e:

@@ -82,7 +82,7 @@ def register(req: RegisterRequest):
 
     try:
         db_field = f"supabase_auth|{req.name or ''}|true|"
-        supabase.table("users").upsert({
+        supabase_admin.table("users").upsert({
             "id": user_id,
             "email": req.email,
             "hashed_password": db_field
