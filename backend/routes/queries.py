@@ -141,7 +141,7 @@ def query_text(
     user_id: str = Depends(get_current_user)
 ):
     subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).execute()
-    if not subject.data or subject.data[0]["user_id"] != user_id:
+    if not subject.data or str(subject.data[0]["user_id"]).strip().lower() != str(user_id).strip().lower():
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
 
     user_name = "Student"
@@ -358,7 +358,7 @@ async def query_photo(
     user_id: str = Depends(get_current_user)
 ):
     subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).execute()
-    if not subject.data or subject.data[0]["user_id"] != user_id:
+    if not subject.data or str(subject.data[0]["user_id"]).strip().lower() != str(user_id).strip().lower():
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
 
     user_name = "Student"
