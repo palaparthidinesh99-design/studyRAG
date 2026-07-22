@@ -85,6 +85,11 @@ def rank_and_filter_resources(query_text: str, collections_list: list) -> list:
 _CHROMA_COLLECTIONS_CACHE = {}
 
 def get_cached_collection(name: str):
+    if len(_CHROMA_COLLECTIONS_CACHE) > 20:
+        _CHROMA_COLLECTIONS_CACHE.clear()
+        import gc
+        gc.collect()
+        
     if name not in _CHROMA_COLLECTIONS_CACHE:
         try:
             col = chroma_client.get_collection(name=name)

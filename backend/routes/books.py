@@ -341,6 +341,10 @@ def search_catalogue(query: str = ""):
             valid_matches = deduped[:3]
         valid_matches.sort(key=relevance_score, reverse=True)
         final = valid_matches[:20]
+        if len(_SEARCH_QUERY_CACHE) > 50:
+            _SEARCH_QUERY_CACHE.clear()
+            import gc
+            gc.collect()
         _SEARCH_QUERY_CACHE[query_clean] = (final, now)
         return final
     except Exception as e:
