@@ -34,6 +34,10 @@ def health_check():
 # Authentication Endpoints
 @app.post("/register")
 def register(req: RegisterRequest):
+    auth_res = None
+    access_token = None
+    user_id = None
+
     try:
         auth_res = supabase.auth.sign_up({
             "email": req.email,
@@ -42,17 +46,40 @@ def register(req: RegisterRequest):
                 "data": {"name": req.name or ""}
             }
         })
+        if auth_res and auth_res.user:
+            user_id = auth_res.user.id
+            if auth_res.session:
+                access_token = auth_res.session.access_token
     except Exception as auth_err:
         err_msg = str(auth_err)
         if "already registered" in err_msg.lower() or "already exists" in err_msg.lower():
             raise HTTPException(status_code=400, detail="Email already registered")
-        raise HTTPException(status_code=400, detail=f"Registration failed: {err_msg}")
+        elif "rate limit" in err_msg.lower():
+            try:
+                admin_res = supabase.auth.admin.create_user({
+                    "email": req.email,
+                    "password": req.password,
+                    "email_confirm": True,
+                    "user_metadata": {"name": req.name or ""}
+                })
+                if admin_res and admin_res.user:
+                    user_id = admin_res.user.id
+                    login_res = supabase.auth.sign_in_with_password({
+                        "email": req.email,
+                        "password": req.password
+                    })
+                    if login_res and login_res.session:
+                        access_token = login_res.session.access_token
+            except Exception as admin_err:
+                admin_msg = str(admin_err)
+                if "already registered" in admin_msg.lower() or "already exists" in admin_msg.lower():
+                    raise HTTPException(status_code=400, detail="Email already registered")
+                raise HTTPException(status_code=400, detail=f"Registration failed: {admin_msg}")
+        else:
+            raise HTTPException(status_code=400, detail=f"Registration failed: {err_msg}")
 
-    if not auth_res or not auth_res.user:
+    if not user_id:
         raise HTTPException(status_code=400, detail="Failed to register user with Supabase Auth.")
-
-    user_id = auth_res.user.id
-    access_token = auth_res.session.access_token if auth_res.session else None
 
     try:
         db_field = f"supabase_auth|{req.name or ''}|true|"
