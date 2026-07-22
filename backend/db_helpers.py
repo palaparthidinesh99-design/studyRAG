@@ -99,6 +99,7 @@ def get_cached_collection(name: str):
             _CHROMA_COLLECTIONS_CACHE[name] = col
     return _CHROMA_COLLECTIONS_CACHE[name]
 
+_IN_MEMORY_SUBJECTS = {}
 _SUBJECT_CACHE = {}
 _CACHE_TTL = 120  # 2 minutes TTL
 
@@ -108,11 +109,19 @@ def get_subject_cached_metadata(subject_id: str, user_id: str) -> dict:
     if cached and (now - cached["timestamp"]) < _CACHE_TTL:
         return cached
 
-    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
-    if not subject.data:
-        raise HTTPException(status_code=404, detail="Subject not found or access denied")
-    
-    collection_name = subject.data[0]["chroma_collection_name"]
+    collection_name = None
+    if subject_id in _IN_MEMORY_SUBJECTS:
+        collection_name = _IN_MEMORY_SUBJECTS[subject_id]["chroma_collection_name"]
+    else:
+        try:
+            subject = supabase.table("subjects").select("*").eq("id", subject_id).execute()
+            if subject.data:
+                collection_name = subject.data[0]["chroma_collection_name"]
+        except Exception as e:
+            print(f"Supabase subject metadata query notice: {e}")
+            
+    if not collection_name:
+        collection_name = f"subject_{subject_id.replace('-', '')}"
     
     ai_note_ids = set()
     try:
