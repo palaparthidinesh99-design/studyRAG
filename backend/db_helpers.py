@@ -294,10 +294,22 @@ def retrieve_merged_context(subject_id: str, query_text: str, user_id: str, n_re
                         if meta and meta.get("source_id") in ai_note_ids:
                             continue
                             
+                        # Exact keyword re-ranking boost: if the query string or key terms appear in doc or section title, boost relevance rank
+                        adj_dist = dist
+                        q_lower = query_text.lower().strip()
+                        doc_lower = doc_clean.lower()
+                        sec_title_lower = (meta.get("section_title") or "").lower() if meta else ""
+
+                        if q_lower and (q_lower in doc_lower or q_lower in sec_title_lower):
+                            adj_dist = max(0.01, dist * 0.5)
+                        elif any(w in doc_lower or w in sec_title_lower for w in q_lower.split() if len(w) > 3):
+                            adj_dist = max(0.05, dist * 0.8)
+
                         chunks.append({
                             "document": doc,
                             "metadata": meta,
-                            "distance": dist,
+                            "distance": adj_dist,
+                            "raw_distance": dist,
                             "source_type": col_info["type"],
                             "source_name": col_info["source_name"],
                             "book_id": col_info.get("book_id")

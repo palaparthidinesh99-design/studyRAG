@@ -116,8 +116,12 @@ def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
 
         if s_name:
             cite_str = f"📖 **Reference:** *{s_name}*"
-            if s_sec and str(s_sec).lower() not in ["none", "unknown", "general"]:
-                cite_str += f" — Section {s_sec}"
+            sec_clean = str(s_sec).strip() if s_sec else ""
+            if sec_clean.lower().startswith("section "):
+                sec_clean = sec_clean[8:].strip()
+
+            if sec_clean and sec_clean.lower() not in ["none", "unknown", "general"]:
+                cite_str += f" — Section {sec_clean}"
             elif s_page and str(s_page).lower() not in ["none", "unknown"]:
                 cite_str += f" — Page {s_page}"
 

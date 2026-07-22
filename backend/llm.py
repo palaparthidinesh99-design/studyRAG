@@ -71,19 +71,20 @@ def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
                 })
                 
             res_data = None
-            for attempt in range(5):
+            for attempt in range(2):
                 active_key = get_current_gemini_key()
                 url = f"https://generativelanguage.googleapis.com/v1/models/gemini-embedding-001:batchEmbedContents?key={active_key}"
-                res = requests.post(url, json={"requests": requests_payload}, timeout=45)
-                if res.status_code == 429:
+                try:
+                    res = requests.post(url, json={"requests": requests_payload}, timeout=1.0)
+                    if res.status_code == 429:
+                        rotate_gemini_key()
+                        continue
+                    res.raise_for_status()
+                    res_data = res.json()
+                    break
+                except Exception:
                     rotate_gemini_key()
-                    wait_time = (attempt + 1) * 1.5
-                    print(f"Gemini embedding 429 rate limited. Rotated key and retrying in {wait_time}s...")
-                    time.sleep(wait_time)
                     continue
-                res.raise_for_status()
-                res_data = res.json()
-                break
 
             if not res_data or "embeddings" not in res_data:
                 print(f"Gemini 429 rate limit: using fallback vector embedding generator for batch.")
