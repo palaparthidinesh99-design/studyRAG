@@ -82,7 +82,7 @@ def delete_cloudinary_file(storage_path: str):
     try:
         import cloudinary
         import cloudinary.uploader
-        cloudinary_url = os.environ.get("CLOUDINARY_URL")
+        cloudinary_url = os.environ.get("CLOUDINARY_URL") or "cloudinary://313175782782875:p_6c1pGedlF78E_0E-0744XyYwY@palaparthidinesh99-design"
         if cloudinary_url:
             clean_url = cloudinary_url.replace("cloudinary://", "")
             if "@" in clean_url:
@@ -114,7 +114,7 @@ def delete_cloudinary_file(storage_path: str):
 def upload_to_cloudinary(file_content: bytes, filename: str, folder: str = "uploads") -> str:
     import cloudinary
     import cloudinary.uploader
-    cloudinary_url = os.environ.get("CLOUDINARY_URL")
+    cloudinary_url = os.environ.get("CLOUDINARY_URL") or "cloudinary://313175782782875:p_6c1pGedlF78E_0E-0744XyYwY@palaparthidinesh99-design"
     if not cloudinary_url:
         raise ValueError("CLOUDINARY_URL not found in environment variables")
         
