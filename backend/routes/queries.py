@@ -103,11 +103,26 @@ def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
         best_sec["source_name"] = clean_source_name(best_sec.get("source_name", ""))
         active_sources.append(best_sec)
 
-    # If active_sources contains a valid citation, remove any accidental disclaimer text
+    # If active_sources contains a valid citation, remove any accidental disclaimer text and append citation footer
     if active_sources:
         disclaimer = "Note: No direct matching references found in the uploaded study materials."
         if disclaimer in cleaned_answer:
             cleaned_answer = cleaned_answer.replace(disclaimer, "").strip()
+
+        src = active_sources[0]
+        s_name = src.get("source_name", "")
+        s_sec = src.get("section", "")
+        s_page = src.get("page", "")
+
+        if s_name:
+            cite_str = f"📖 **Reference:** *{s_name}*"
+            if s_sec and str(s_sec).lower() not in ["none", "unknown", "general"]:
+                cite_str += f" — Section {s_sec}"
+            elif s_page and str(s_page).lower() not in ["none", "unknown"]:
+                cite_str += f" — Page {s_page}"
+
+            if cite_str not in cleaned_answer:
+                cleaned_answer = f"{cleaned_answer}\n\n---\n{cite_str}"
 
     return cleaned_answer, active_sources[:1]
 
