@@ -10,6 +10,13 @@ from backend.processors import split_into_subchunks
 
 router = APIRouter(prefix="/subjects", tags=["subjects"])
 
+def create_subject_chroma_collection(c_name: str):
+    if chroma_client is not None:
+        try:
+            chroma_client.get_or_create_collection(name=c_name)
+        except Exception as chroma_err:
+            print(f"Background Chroma collection creation warning: {chroma_err}")
+
 @router.post("")
 def create_subject(
     req: CreateSubjectRequest,
@@ -38,10 +45,7 @@ def create_subject(
         }).execute()
         
         if chroma_client is not None:
-            try:
-                background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name)
-            except Exception as chroma_err:
-                print(f"Chroma collection creation warning: {chroma_err}")
+            background_tasks.add_task(create_subject_chroma_collection, collection_name)
 
         return result.data[0]
     except Exception as e:
