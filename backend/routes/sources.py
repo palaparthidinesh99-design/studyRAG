@@ -15,7 +15,7 @@ async def upload_source(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
     
@@ -73,11 +73,11 @@ async def upload_source(
 
 @router.delete("/{source_id}")
 def delete_source(subject_id: str, source_id: str, user_id: str = Depends(get_current_user)):
-    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
         
-    source_res = supabase.table("sources").select("*").eq("id", source_id).eq("subject_id", subject_id).execute()
+    source_res = supabase_admin.table("sources").select("*").eq("id", source_id).eq("subject_id", subject_id).execute()
     if not source_res.data:
         raise HTTPException(status_code=404, detail="Source not found")
         
@@ -85,7 +85,7 @@ def delete_source(subject_id: str, source_id: str, user_id: str = Depends(get_cu
     storage_path = source_data.get("storage_path")
     
     try:
-        supabase.table("sources").delete().eq("id", source_id).execute()
+        supabase_admin.table("sources").delete().eq("id", source_id).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete source record: {str(e)}")
         
@@ -115,11 +115,11 @@ def get_source_content(
     source_id: str,
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
         
-    source = supabase.table("sources").select("*").eq("id", source_id).eq("subject_id", subject_id).execute()
+    source = supabase_admin.table("sources").select("*").eq("id", source_id).eq("subject_id", subject_id).execute()
     if not source.data:
         raise HTTPException(status_code=404, detail="Source not found")
         
@@ -141,11 +141,11 @@ def get_source_file(
 ):
     from fastapi.responses import RedirectResponse
 
-    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
         
-    source = supabase.table("sources").select("*").eq("id", source_id).eq("subject_id", subject_id).execute()
+    source = supabase_admin.table("sources").select("*").eq("id", source_id).eq("subject_id", subject_id).execute()
     if not source.data:
         raise HTTPException(status_code=404, detail="Source not found")
         
