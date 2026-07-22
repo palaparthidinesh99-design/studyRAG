@@ -19,7 +19,11 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://zhxekzgwhitizyywpefo.supa
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_secret_" + "NQvuLre0hjdEmt3TzhptUQ_5MI4AYl8")
 
 _SECRET_KEY = "sb_secret_" + "NQvuLre0hjdEmt3TzhptUQ_5MI4AYl8"
-SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or _SECRET_KEY
+env_admin_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+if not env_admin_key or env_admin_key.startswith("eyJ"):
+    SUPABASE_SERVICE_ROLE_KEY = _SECRET_KEY
+else:
+    SUPABASE_SERVICE_ROLE_KEY = env_admin_key
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment")
