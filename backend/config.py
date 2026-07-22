@@ -14,6 +14,14 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "default_secret_key_change_me_in_prod"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
+# LLM & Cloud API Keys
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "https://ollama.com/api")
+OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
+CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "")
+
 # Service role secret key construction to avoid GitHub scanner while guaranteeing full DB privileges
 SERVICE_KEY = "sb_secret_" + "NQvuLre0hjdEmt3TzhptUQ_5MI4AYl8"
 
