@@ -243,9 +243,7 @@ def query_text(
         except Exception as e:
             print(f"Failed to fetch session history: {e}")
 
-    retrieval_text = req.query
-    if questions_list:
-        retrieval_text = f"{req.query} {questions_list[-1]}"
+    retrieval_text = req.query.strip()
         
     retrieved = retrieve_merged_context(subject_id, retrieval_text, user_id, n_results=8, source_filter=req.source_filter or "all")
     RELEVANCE_THRESHOLD = 3.5
@@ -456,9 +454,7 @@ async def query_photo(
         except Exception as e:
             print(f"Failed to fetch session history: {e}")
 
-    retrieval_text = extracted_text
-    if questions_list:
-        retrieval_text = f"{extracted_text} {questions_list[-1]}"
+    retrieval_text = extracted_text.strip()
         
     retrieved = retrieve_merged_context(subject_id, retrieval_text, user_id, n_results=8, source_filter=source_filter)
     RELEVANCE_THRESHOLD = 1.95
