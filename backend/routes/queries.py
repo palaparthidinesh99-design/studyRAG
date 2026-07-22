@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, B
 from typing import Optional, List
 from pydantic import BaseModel
 
-from backend.config import supabase, supabase_admin, chroma_client
+from backend.config import supabase, chroma_client
 from backend.auth import get_current_user
 from backend.models import QueryTextRequest, TriggerNotesRequest
 from backend.llm import call_groq, call_groq_vision, compress_image
@@ -114,15 +114,15 @@ def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
 def get_subject_materials_info(subject_id: str, subject_name: str) -> str:
     try:
         # Fetch personal sources (uploaded documents/notes)
-        personal_res = supabase_admin.table("sources").select("title").eq("subject_id", subject_id).execute()
+        personal_res = supabase.table("sources").select("title").eq("subject_id", subject_id).execute()
         personal_titles = [s["title"] for s in personal_res.data] if personal_res.data else []
         
         # Fetch linked global books
-        linked_books = supabase_admin.table("subject_books").select("global_book_id").eq("subject_id", subject_id).execute()
+        linked_books = supabase.table("subject_books").select("global_book_id").eq("subject_id", subject_id).execute()
         book_titles = []
         if linked_books.data:
             book_ids = [lb["global_book_id"] for lb in linked_books.data]
-            books = supabase_admin.table("global_books").select("title").in_("id", book_ids).execute()
+            books = supabase.table("global_books").select("title").in_("id", book_ids).execute()
             book_titles = [b["title"] for b in books.data] if books.data else []
             
         all_material_titles = personal_titles + book_titles
@@ -140,13 +140,13 @@ def query_text(
     req: QueryTextRequest,
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).execute()
-    if not subject.data or str(subject.data[0]["user_id"]).strip().lower() != str(user_id).strip().lower():
+    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
 
     user_name = "Student"
     try:
-        user_res = supabase_admin.table("users").select("hashed_password").eq("id", user_id).execute()
+        user_res = supabase.table("users").select("hashed_password").eq("id", user_id).execute()
         if user_res.data:
             db_pwd = user_res.data[0].get("hashed_password", "")
             if "|" in db_pwd:
@@ -173,7 +173,7 @@ def query_text(
             raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
             
         try:
-            supabase_admin.table("queries").insert({
+            supabase.table("queries").insert({
                 "subject_id": subject_id,
                 "input_type": "text",
                 "extracted_text": json.dumps([req.query]),
@@ -198,7 +198,7 @@ def query_text(
     
     if req.query_id:
         try:
-            existing_res = supabase_admin.table("queries").select("*").eq("id", req.query_id).execute()
+            existing_res = supabase.table("queries").select("*").eq("id", req.query_id).execute()
             if existing_res.data:
                 row = existing_res.data[0]
                 try:
@@ -323,13 +323,13 @@ Student's Question: {req.query}
     final_query_id = req.query_id
     try:
         if final_query_id:
-            supabase_admin.table("queries").update({
+            supabase.table("queries").update({
                 "extracted_text": json.dumps(questions_list),
                 "generated_answer": json.dumps(answers_list),
                 "sections_used": citations_history
             }).eq("id", final_query_id).execute()
         else:
-            db_res = supabase_admin.table("queries").insert({
+            db_res = supabase.table("queries").insert({
                 "subject_id": subject_id,
                 "input_type": "text",
                 "extracted_text": json.dumps(questions_list),
@@ -357,13 +357,13 @@ async def query_photo(
     query_id: Optional[str] = Form(None),
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).execute()
-    if not subject.data or str(subject.data[0]["user_id"]).strip().lower() != str(user_id).strip().lower():
+    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
 
     user_name = "Student"
     try:
-        user_res = supabase_admin.table("users").select("hashed_password").eq("id", user_id).execute()
+        user_res = supabase.table("users").select("hashed_password").eq("id", user_id).execute()
         if user_res.data:
             db_pwd = user_res.data[0].get("hashed_password", "")
             if "|" in db_pwd:
@@ -411,7 +411,7 @@ async def query_photo(
     
     if query_id:
         try:
-            existing_res = supabase_admin.table("queries").select("*").eq("id", query_id).execute()
+            existing_res = supabase.table("queries").select("*").eq("id", query_id).execute()
             if existing_res.data:
                 row = existing_res.data[0]
                 try:
@@ -533,13 +533,13 @@ Student's Question: {extracted_text}
     final_query_id = query_id
     try:
         if final_query_id:
-            supabase_admin.table("queries").update({
+            supabase.table("queries").update({
                 "extracted_text": json.dumps(questions_list),
                 "generated_answer": json.dumps(answers_list),
                 "sections_used": citations_history
             }).eq("id", final_query_id).execute()
         else:
-            db_res = supabase_admin.table("queries").insert({
+            db_res = supabase.table("queries").insert({
                 "subject_id": subject_id,
                 "input_type": "photo",
                 "input_storage_path": storage_path,
@@ -586,7 +586,7 @@ def generate_notes_background_task(
             from pypdf import PdfReader
             from backend.config import download_file_bytes
             
-            src_res = supabase_admin.table("sources").select("*").eq("id", source_id).execute()
+            src_res = supabase.table("sources").select("*").eq("id", source_id).execute()
             if not src_res.data:
                 print("Background notes gen failed: source document not found.")
                 return
@@ -628,7 +628,7 @@ def generate_notes_background_task(
             except Exception as e:
                 print(f"Background notes gen: failed to download/parse original source: {e}")
                 try:
-                    supabase_admin.table("sources").update({
+                    supabase.table("sources").update({
                         "storage_path": f"failed:Failed to download source: {str(e)}"
                     }).eq("id", generated_note_source_id).execute()
                 except Exception:
@@ -637,7 +637,7 @@ def generate_notes_background_task(
 
         note_title = "Study Guide"
         try:
-            note_src = supabase_admin.table("sources").select("title").eq("id", generated_note_source_id).execute()
+            note_src = supabase.table("sources").select("title").eq("id", generated_note_source_id).execute()
             if note_src.data:
                 raw_title = note_src.data[0]["title"]
                 note_title = raw_title.replace("AI Notes - ", "").replace("AI Notes -", "").strip()
@@ -683,7 +683,7 @@ def generate_notes_background_task(
 
         status_msg = f"processing:30:Generating study guide sections...:{generated_note_source_id}"
         try:
-            supabase_admin.table("sources").update({"storage_path": status_msg}).eq("id", generated_note_source_id).execute()
+            supabase.table("sources").update({"storage_path": status_msg}).eq("id", generated_note_source_id).execute()
         except Exception:
             pass
 
@@ -745,7 +745,7 @@ STUDENT'S UPLOADED SOURCE MATERIAL:
         )
         
         # 6. Update the source row to point to the actual storage path
-        supabase_admin.table("sources").update({
+        supabase.table("sources").update({
             "storage_path": dest_storage_path
         }).eq("id", generated_note_source_id).execute()
         
@@ -759,7 +759,7 @@ STUDENT'S UPLOADED SOURCE MATERIAL:
     except Exception as general_err:
         print(f"Background notes generation thread crashed: {general_err}")
         try:
-            supabase_admin.table("sources").update({
+            supabase.table("sources").update({
                 "storage_path": f"failed:Generation crashed: {str(general_err)}"
             }).eq("id", generated_note_source_id).execute()
         except Exception:
@@ -772,7 +772,7 @@ async def analyze_notes_outline(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
         
@@ -819,7 +819,7 @@ async def analyze_notes_outline(
         # Non-fatal: we still have the text in raw_text
         
     try:
-        source_insert = supabase_admin.table("sources").insert({
+        source_insert = supabase.table("sources").insert({
             "subject_id": subject_id,
             "source_type": "notes_input",
             "title": file.filename,
@@ -910,14 +910,14 @@ def trigger_notes_generation(
     background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
         
     collection_name = subject.data[0]["chroma_collection_name"]
     
     # 1. Fetch original file details
-    src_res = supabase_admin.table("sources").select("title").eq("id", req.source_id).execute()
+    src_res = supabase.table("sources").select("title").eq("id", req.source_id).execute()
     if not src_res.data:
         raise HTTPException(status_code=404, detail="Original source document not found.")
         
@@ -932,7 +932,7 @@ def trigger_notes_generation(
     status_path = f"processing:0:Initializing study guide generation...:{task_uuid}"
     
     try:
-        source_insert = supabase_admin.table("sources").insert({
+        source_insert = supabase.table("sources").insert({
             "subject_id": subject_id,
             "source_type": "generated_note",
             "title": title,
@@ -962,9 +962,9 @@ def delete_query(
     query_id: str,
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
+    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
     if not subject.data:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
         
-    supabase_admin.table("queries").delete().eq("id", query_id).eq("subject_id", subject_id).execute()
+    supabase.table("queries").delete().eq("id", query_id).eq("subject_id", subject_id).execute()
     return {"status": "success"}

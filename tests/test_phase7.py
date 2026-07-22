@@ -5,25 +5,14 @@ import requests
 BASE_URL = "https://studyrag-3s4g.onrender.com"
 
 def run_test():
-    # 1. Register or login a test user
-    email = f"student_{uuid.uuid4().hex[:6]}@gmail.com"
-    password = "testpassword123!"
+    # 1. Register a fresh test user
+    email = f"student_{uuid.uuid4().hex[:6]}@example.com"
+    password = "testpassword123"
     
-    print(f"Authenticating user: {email}")
+    print(f"Registering user: {email}")
     res = requests.post(f"{BASE_URL}/register", json={"email": email, "password": password})
-    if res.status_code == 200:
-        token = res.json()["access_token"]
-    else:
-        # If registration restricts signups, create user via admin and login
-        from backend.config import supabase_admin
-        try:
-            supabase_admin.auth.admin.create_user({"email": email, "password": password, "email_confirm": True})
-        except Exception:
-            pass
-        res_login = requests.post(f"{BASE_URL}/login", json={"email": email, "password": password})
-        res_login.raise_for_status()
-        token = res_login.json()["access_token"]
-        
+    res.raise_for_status()
+    token = res.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
     
     # 2. Create a test subject

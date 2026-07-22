@@ -3,19 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
 
-from backend.config import supabase, supabase_admin, chroma_client
+from backend.config import supabase, chroma_client
 from backend.auth import get_current_user
 from backend.models import CreateSubjectRequest, SaveNoteRequest
 from backend.processors import split_into_subchunks
 
 router = APIRouter(prefix="/subjects", tags=["subjects"])
-
-def create_subject_chroma_collection(c_name: str):
-    if chroma_client is not None:
-        try:
-            chroma_client.get_or_create_collection(name=c_name)
-        except Exception as chroma_err:
-            print(f"Background Chroma collection creation warning: {chroma_err}")
 
 @router.post("")
 def create_subject(
@@ -27,25 +20,28 @@ def create_subject(
     
     # Ensure public.users table contains a row for user_id to satisfy foreign key constraint
     try:
-        user_check = supabase_admin.table("users").select("id").eq("id", user_id).execute()
+        user_check = supabase.table("users").select("id").eq("id", user_id).execute()
         if not user_check.data:
-            supabase_admin.table("users").upsert({
+            supabase.table("users").upsert({
                 "id": user_id,
-                "email": f"user_{user_id}@supabase.auth",
+                "email": "user@supabase.auth",
                 "hashed_password": "supabase_auth||true|"
             }).execute()
     except Exception as sync_e:
         print(f"Sync public.users on subject creation: {sync_e}")
 
     try:
-        result = supabase_admin.table("subjects").insert({
+        result = supabase.table("subjects").insert({
             "user_id": user_id,
             "name": req.name,
             "chroma_collection_name": collection_name,
         }).execute()
         
         if chroma_client is not None:
-            background_tasks.add_task(create_subject_chroma_collection, collection_name)
+            try:
+                background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name)
+            except Exception as chroma_err:
+                print(f"Chroma collection creation warning: {chroma_err}")
 
         return result.data[0]
     except Exception as e:

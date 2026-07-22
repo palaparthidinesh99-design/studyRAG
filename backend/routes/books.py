@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
 from concurrent.futures import ThreadPoolExecutor
 import difflib
 
-from backend.config import supabase, supabase_admin, chroma_client
+from backend.config import supabase, chroma_client
 from backend.auth import get_current_user
 from backend.models import LinkCatalogueBookRequest
 from backend.db_helpers import (
@@ -419,7 +419,7 @@ def link_catalogue_book(
     linked = supabase.table("subject_books").select("*").eq("subject_id", subject_id).eq("global_book_id", book_id).execute()
     if not linked.data:
         try:
-            supabase_admin.table("subject_books").insert({
+            supabase.table("subject_books").insert({
                 "subject_id": subject_id,
                 "global_book_id": book_id
             }).execute()
@@ -439,7 +439,7 @@ def link_book_to_subject(subject_id: str, global_book_id: str, user_id: str = De
     if not book.data:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    result = supabase_admin.table("subject_books").insert({
+    result = supabase.table("subject_books").insert({
         "subject_id": subject_id,
         "global_book_id": global_book_id,
     }).execute()
