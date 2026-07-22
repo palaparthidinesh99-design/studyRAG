@@ -116,6 +116,13 @@ def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
             "page": ""
         })
 
+    # Fallback 3 if no source matched yet but sections_used contains retrieved chunks:
+    if not active_sources and sections_used:
+        raw_sorted = sorted(sections_used, key=lambda s: s.get("distance", 1.0))
+        best_sec = dict(raw_sorted[0])
+        best_sec["source_name"] = clean_source_name(best_sec.get("source_name", ""))
+        active_sources.append(best_sec)
+
     # If active_sources contains a valid citation, remove any accidental disclaimer text and append citation footer
     if active_sources:
         disclaimer = "Note: No direct matching references found in the uploaded study materials."
