@@ -128,29 +128,11 @@ def login(req: LoginRequest):
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
+from backend.auth import get_current_user_details
+
 @app.get("/me")
-def read_current_user(user_id: str = Depends(get_current_user)):
-    user_email = ""
-    user_name = ""
-    
-    user = supabase.table("users").select("id", "email", "hashed_password").eq("id", user_id).execute()
-    if user.data:
-        u = user.data[0]
-        user_email = u.get("email", "")
-        db_pwd = u.get("hashed_password", "")
-        if "|" in db_pwd:
-            parts = db_pwd.split("|")
-            if len(parts) > 1 and parts[1] and parts[1].strip() not in ["true", "false", "|true|", "supabase_auth"]:
-                user_name = parts[1].strip()
-
-    if not user_name or user_name in ["true", "false", "|true|", "none", "null"]:
-        user_name = "Student"
-
-    return {
-        "id": user_id,
-        "email": user_email,
-        "name": user_name
-    }
+def read_current_user(user_details: dict = Depends(get_current_user_details)):
+    return user_details
 
 # Register modular sub-routers
 app.include_router(subjects_router)

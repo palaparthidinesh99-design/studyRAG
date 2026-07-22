@@ -11,7 +11,7 @@ from typing import Optional, List
 from pydantic import BaseModel
 
 from backend.config import supabase, chroma_client
-from backend.auth import get_current_user
+from backend.auth import get_current_user, get_current_user_details
 from backend.models import QueryTextRequest, TriggerNotesRequest
 from backend.llm import call_groq, call_groq_vision, compress_image
 from backend.db_helpers import retrieve_merged_context
@@ -157,26 +157,22 @@ def get_subject_materials_info(subject_id: str, subject_name: str) -> str:
 def query_text(
     subject_id: str,
     req: QueryTextRequest,
-    user_id: str = Depends(get_current_user)
+    user_details: dict = Depends(get_current_user_details)
 ):
-    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
-    if not subject.data:
-        raise HTTPException(status_code=404, detail="Subject not found or access denied")
+    from backend.db_helpers import _IN_MEMORY_SUBJECTS
+    user_id = user_details["id"]
+    user_name = user_details["name"]
 
-    user_name = "Student"
+    subject_name = "Study Subject"
     try:
-        user_res = supabase.table("users").select("hashed_password").eq("id", user_id).execute()
-        if user_res.data:
-            db_pwd = user_res.data[0].get("hashed_password", "")
-            if "|" in db_pwd:
-                parts = db_pwd.split("|")
-                if len(parts) > 1 and parts[1] and parts[1].strip() not in ["true", "false", "|true|", "supabase_auth"]:
-                    user_name = parts[1].strip()
+        subject = supabase.table("subjects").select("*").eq("id", subject_id).execute()
+        if subject and subject.data:
+            subject_name = subject.data[0]["name"]
     except Exception:
         pass
 
-    if not user_name or user_name in ["true", "false", "|true|", "none", "null"]:
-        user_name = "Student"
+    if subject_id in _IN_MEMORY_SUBJECTS:
+        subject_name = _IN_MEMORY_SUBJECTS[subject_id]["name"]
 
     # Fast intercept for greetings
     greeting_pattern = re.compile(
@@ -208,7 +204,6 @@ def query_text(
             "sources": []
         }
 
-    subject_name = subject.data[0]["name"]
     materials_info = get_subject_materials_info(subject_id, subject_name)
 
     questions_list = []
@@ -372,28 +367,23 @@ async def query_photo(
     file: UploadFile = File(...),
     source_filter: str = "all",
     query_id: Optional[str] = Form(None),
-    user_id: str = Depends(get_current_user)
+    user_details: dict = Depends(get_current_user_details)
 ):
-    subject = supabase.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
-    if not subject.data:
-        raise HTTPException(status_code=404, detail="Subject not found or access denied")
+    from backend.db_helpers import _IN_MEMORY_SUBJECTS
+    user_id = user_details["id"]
+    user_name = user_details["name"]
 
-    user_name = "Student"
+    subject_name = "Study Subject"
     try:
-        user_res = supabase.table("users").select("hashed_password").eq("id", user_id).execute()
-        if user_res.data:
-            db_pwd = user_res.data[0].get("hashed_password", "")
-            if "|" in db_pwd:
-                parts = db_pwd.split("|")
-                if len(parts) > 1 and parts[1] and parts[1].strip() not in ["true", "false", "|true|", "supabase_auth"]:
-                    user_name = parts[1].strip()
+        subject = supabase.table("subjects").select("*").eq("id", subject_id).execute()
+        if subject and subject.data:
+            subject_name = subject.data[0]["name"]
     except Exception:
         pass
 
-    if not user_name or user_name in ["true", "false", "|true|", "none", "null"]:
-        user_name = "Student"
+    if subject_id in _IN_MEMORY_SUBJECTS:
+        subject_name = _IN_MEMORY_SUBJECTS[subject_id]["name"]
     
-    subject_name = subject.data[0]["name"]
     materials_info = get_subject_materials_info(subject_id, subject_name)
     
     file_content = await file.read()
