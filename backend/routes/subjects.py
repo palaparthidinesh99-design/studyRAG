@@ -22,9 +22,17 @@ def create_subject(
     try:
         user_check = supabase.table("users").select("id").eq("id", user_id).execute()
         if not user_check.data:
+            user_email = f"user_{user_id.replace('-', '')[:12]}@study.rag"
+            try:
+                auth_user = supabase.auth.admin.get_user_by_id(user_id)
+                if auth_user and auth_user.user and auth_user.user.email:
+                    user_email = auth_user.user.email
+            except Exception:
+                pass
+
             supabase.table("users").upsert({
                 "id": user_id,
-                "email": "user@supabase.auth",
+                "email": user_email,
                 "hashed_password": "supabase_auth||true|"
             }).execute()
     except Exception as sync_e:
@@ -43,10 +51,18 @@ def create_subject(
             except Exception as chroma_err:
                 print(f"Chroma collection creation warning: {chroma_err}")
 
-        return result.data[0]
+        if result and result.data:
+            return result.data[0]
+        return {"id": collection_name, "user_id": user_id, "name": req.name, "chroma_collection_name": collection_name}
     except Exception as e:
-        print(f"Failed to create subject in database: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to create subject: {str(e)}")
+        err_str = str(e)
+        print(f"Failed to create subject in database: {err_str}")
+        if "row-level security policy" in err_str.lower() or "42501" in err_str:
+            raise HTTPException(
+                status_code=400,
+                detail="Database Error (RLS 42501): Row-Level Security policy on 'subjects' table is blocking inserts. Please add SUPABASE_SERVICE_ROLE_KEY to environment variables or disable RLS for 'subjects' in Supabase SQL editor: ALTER TABLE subjects DISABLE ROW LEVEL SECURITY;"
+            )
+        raise HTTPException(status_code=500, detail=f"Failed to create subject: {err_str}")
 
 @router.get("")
 def list_subjects(user_id: str = Depends(get_current_user)):
