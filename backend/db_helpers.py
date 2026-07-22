@@ -100,6 +100,7 @@ def get_cached_collection(name: str):
     return _CHROMA_COLLECTIONS_CACHE[name]
 
 _IN_MEMORY_SUBJECTS = {}
+_IN_MEMORY_SUBJECT_BOOKS = {} # subject_id -> list of book dicts
 _SUBJECT_CACHE = {}
 _CACHE_TTL = 120  # 2 minutes TTL
 
@@ -137,10 +138,15 @@ def get_subject_cached_metadata(subject_id: str, user_id: str) -> dict:
         if linked_books.data:
             book_ids = [lb["global_book_id"] for lb in linked_books.data]
             books = supabase.table("global_books").select("id", "title", "chroma_collection_name").in_("id", book_ids).execute()
-            if books.data:
-                linked_books_data = books.data
+            linked_books_data = books.data if books.data else []
     except Exception as e:
-        print(f"Failed to fetch linked books: {e}")
+        print(f"Failed to fetch linked books from DB: {e}")
+
+    mem_books = _IN_MEMORY_SUBJECT_BOOKS.get(subject_id, [])
+    seen_bids = {b["id"] for b in linked_books_data}
+    for mb in mem_books:
+        if mb["id"] not in seen_bids:
+            linked_books_data.append(mb)
 
     metadata = {
         "timestamp": now,

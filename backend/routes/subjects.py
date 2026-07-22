@@ -165,43 +165,65 @@ def list_subject_books(
     subject_id: str,
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase.table("subjects").select("id").eq("id", subject_id).eq("user_id", user_id).execute()
-    if not subject.data:
-        raise HTTPException(status_code=404, detail="Subject not found or access denied")
-        
+    books_list = []
     try:
         result = supabase.table("subject_books").select("global_books(id, title)").eq("subject_id", subject_id).execute()
-        return [{"id": item["global_books"]["id"], "title": item["global_books"]["title"]} for item in result.data if item.get("global_books")]
+        if result and result.data:
+            books_list = [{"id": item["global_books"]["id"], "title": item["global_books"]["title"]} for item in result.data if item.get("global_books")]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch linked books: {str(e)}")
+        print(f"Supabase list_subject_books notice: {e}")
+
+    from backend.db_helpers import _IN_MEMORY_SUBJECT_BOOKS
+    mem_books = _IN_MEMORY_SUBJECT_BOOKS.get(subject_id, [])
+    seen = {b["id"] for b in books_list}
+    for mb in mem_books:
+        if mb["id"] not in seen:
+            books_list.append({"id": mb["id"], "title": mb["title"]})
+
+    return books_list
 
 @router.get("/{subject_id}/data")
 def get_subject_data(
     subject_id: str,
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase.table("subjects").select("id").eq("id", subject_id).eq("user_id", user_id).execute()
-    if not subject.data:
-        raise HTTPException(status_code=404, detail="Subject not found or access denied")
+    from backend.db_helpers import _IN_MEMORY_SUBJECTS, _IN_MEMORY_SUBJECT_BOOKS
 
     try:
         def fetch_sources():
-            return supabase.table("sources").select("*").eq("subject_id", subject_id).execute().data
+            try:
+                return supabase.table("sources").select("*").eq("subject_id", subject_id).execute().data
+            except Exception:
+                return []
         
         def fetch_books():
-            result = supabase.table("subject_books").select("global_books(id, title, chroma_collection_name)").eq("subject_id", subject_id).execute()
-            books_to_check = [item["global_books"] for item in result.data if item.get("global_books")]
-            return [
-                {
-                    "id": gb["id"],
-                    "title": gb["title"],
-                    "is_ready": True
-                }
-                for gb in books_to_check if gb
-            ]
+            books_list = []
+            try:
+                result = supabase.table("subject_books").select("global_books(id, title, chroma_collection_name)").eq("subject_id", subject_id).execute()
+                if result and result.data:
+                    books_list = [
+                        {
+                            "id": gb["id"],
+                            "title": gb["title"],
+                            "is_ready": True
+                        }
+                        for item in result.data if item.get("global_books") for gb in [item["global_books"]] if gb
+                    ]
+            except Exception:
+                pass
+                
+            mem_books = _IN_MEMORY_SUBJECT_BOOKS.get(subject_id, [])
+            seen = {b["id"] for b in books_list}
+            for mb in mem_books:
+                if mb["id"] not in seen:
+                    books_list.append({"id": mb["id"], "title": mb["title"], "is_ready": True})
+            return books_list
         
         def fetch_history():
-            return supabase.table("queries").select("id,input_type,extracted_text,generated_answer,sections_used,created_at").eq("subject_id", subject_id).order("created_at", desc=True).limit(8).execute().data
+            try:
+                return supabase.table("queries").select("id,input_type,extracted_text,generated_answer,sections_used,created_at").eq("subject_id", subject_id).order("created_at", desc=True).limit(8).execute().data
+            except Exception:
+                return []
         
         sources, books, history = [], [], []
         with ThreadPoolExecutor(max_workers=3) as executor:
