@@ -15,8 +15,8 @@ async def upload_source(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
-    if not subject.data:
+    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).execute()
+    if not subject.data or subject.data[0]["user_id"] != user_id:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
     
     collection_name = subject.data[0]["chroma_collection_name"]

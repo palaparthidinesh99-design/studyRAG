@@ -140,8 +140,8 @@ def query_text(
     req: QueryTextRequest,
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
-    if not subject.data:
+    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).execute()
+    if not subject.data or subject.data[0]["user_id"] != user_id:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
 
     user_name = "Student"
@@ -357,8 +357,8 @@ async def query_photo(
     query_id: Optional[str] = Form(None),
     user_id: str = Depends(get_current_user)
 ):
-    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).eq("user_id", user_id).execute()
-    if not subject.data:
+    subject = supabase_admin.table("subjects").select("*").eq("id", subject_id).execute()
+    if not subject.data or subject.data[0]["user_id"] != user_id:
         raise HTTPException(status_code=404, detail="Subject not found or access denied")
 
     user_name = "Student"
