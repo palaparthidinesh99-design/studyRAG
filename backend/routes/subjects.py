@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
 
-from backend.config import supabase, chroma_client
+from backend.config import supabase, supabase_admin, chroma_client
 from backend.auth import get_current_user
 from backend.models import CreateSubjectRequest, SaveNoteRequest
 from backend.processors import split_into_subchunks
@@ -27,9 +27,9 @@ def create_subject(
     
     # Ensure public.users table contains a row for user_id to satisfy foreign key constraint
     try:
-        user_check = supabase.table("users").select("id").eq("id", user_id).execute()
+        user_check = supabase_admin.table("users").select("id").eq("id", user_id).execute()
         if not user_check.data:
-            supabase.table("users").upsert({
+            supabase_admin.table("users").upsert({
                 "id": user_id,
                 "email": "user@supabase.auth",
                 "hashed_password": "supabase_auth||true|"
@@ -38,7 +38,7 @@ def create_subject(
         print(f"Sync public.users on subject creation: {sync_e}")
 
     try:
-        result = supabase.table("subjects").insert({
+        result = supabase_admin.table("subjects").insert({
             "user_id": user_id,
             "name": req.name,
             "chroma_collection_name": collection_name,

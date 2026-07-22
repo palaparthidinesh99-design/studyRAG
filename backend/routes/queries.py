@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, B
 from typing import Optional, List
 from pydantic import BaseModel
 
-from backend.config import supabase, chroma_client
+from backend.config import supabase, supabase_admin, chroma_client
 from backend.auth import get_current_user
 from backend.models import QueryTextRequest, TriggerNotesRequest
 from backend.llm import call_groq, call_groq_vision, compress_image
@@ -173,7 +173,7 @@ def query_text(
             raise HTTPException(status_code=500, detail=f"LLM generation failed: {str(e)}")
             
         try:
-            supabase.table("queries").insert({
+            supabase_admin.table("queries").insert({
                 "subject_id": subject_id,
                 "input_type": "text",
                 "extracted_text": json.dumps([req.query]),
@@ -329,7 +329,7 @@ Student's Question: {req.query}
                 "sections_used": citations_history
             }).eq("id", final_query_id).execute()
         else:
-            db_res = supabase.table("queries").insert({
+            db_res = supabase_admin.table("queries").insert({
                 "subject_id": subject_id,
                 "input_type": "text",
                 "extracted_text": json.dumps(questions_list),
@@ -539,7 +539,7 @@ Student's Question: {extracted_text}
                 "sections_used": citations_history
             }).eq("id", final_query_id).execute()
         else:
-            db_res = supabase.table("queries").insert({
+            db_res = supabase_admin.table("queries").insert({
                 "subject_id": subject_id,
                 "input_type": "photo",
                 "input_storage_path": storage_path,
@@ -819,7 +819,7 @@ async def analyze_notes_outline(
         # Non-fatal: we still have the text in raw_text
         
     try:
-        source_insert = supabase.table("sources").insert({
+        source_insert = supabase_admin.table("sources").insert({
             "subject_id": subject_id,
             "source_type": "notes_input",
             "title": file.filename,
@@ -932,7 +932,7 @@ def trigger_notes_generation(
     status_path = f"processing:0:Initializing study guide generation...:{task_uuid}"
     
     try:
-        source_insert = supabase.table("sources").insert({
+        source_insert = supabase_admin.table("sources").insert({
             "subject_id": subject_id,
             "source_type": "generated_note",
             "title": title,

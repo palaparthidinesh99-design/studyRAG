@@ -2,7 +2,7 @@ import os
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import FileResponse
-from backend.config import supabase, chroma_client
+from backend.config import supabase, supabase_admin, chroma_client
 from backend.auth import get_current_user
 from backend.tasks import index_source_task
 
@@ -43,7 +43,7 @@ async def upload_source(
         raise HTTPException(status_code=500, detail=f"Failed to upload to Cloudinary: {str(e)}")
         
     try:
-        source_insert = supabase.table("sources").insert({
+        source_insert = supabase_admin.table("sources").insert({
             "subject_id": subject_id,
             "source_type": source_type,
             "title": file.filename,
