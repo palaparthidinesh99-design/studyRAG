@@ -28,17 +28,32 @@ def list_global_books():
     try:
         res = supabase.table("global_books").select("*").execute()
         if res and res.data:
+            # Filter to keep indexed books with non-empty collections
+            indexed = [b for b in res.data if b.get("chroma_collection_name") in [
+                "book_fcb34e0fbe1540dbba9bd7d76d44a3b1", # AP Physics
+                "book_2da719b3249d454e8b1906cf6c86f0b0", # Chemistry 2e
+                "book_bb31b45a3e784efcb25293c6443561cd", # US History
+                "book_c2a7c4f45f5b4c2898e30c4a45318bd5", # World History Vol 2
+                "book_b8549d1250d44ebe93fde41969cd859b", # Intro to Philosophy
+                "book_f6d49f37fb8d4a8da666dca97eb247fd", # Chemistry Atoms First
+                "book_11acbf5efebf4fb6a1ee5d94943fcf31", # College Physics
+                "book_3179b9f2f0064c1192085797cffddba9", # World History Vol 1
+                "book_ddaa9aa2e87748f8b3ee2d7c0f1e0cf5"  # US History Vol 1
+            ]]
+            if indexed:
+                return indexed
             return res.data
     except Exception as e:
         print(f"Supabase global_books query notice: {e}")
 
     return [
-        {"id": "11acbf5e-febf-4fb6-a1ee-5d94943fcf31", "title": "College Physics For AP® Courses 2e", "chroma_collection_name": "book_11acbf5efebf4fb6a1ee5d94943fcf31"},
-        {"id": "37c415ed-9da7-48e9-8a9f-007ffd45e23e", "title": "U.S. History", "chroma_collection_name": "book_bb31b45a3e784efcb25293c6443561cd"},
-        {"id": "55cc8414-b996-481b-b322-319dd6b39a2e", "title": "Chemistry: Atoms First", "chroma_collection_name": "book_f6d49f37fb8d4a8da666dca97eb247fd"},
+        {"id": "ff2c5eb5-1c5c-4517-bfc9-106721fd3001", "title": "The AP Physics Collection", "chroma_collection_name": "book_fcb34e0fbe1540dbba9bd7d76d44a3b1"},
         {"id": "b3ba224e-f54a-4d58-a0f8-41f523109463", "title": "Chemistry 2e", "chroma_collection_name": "book_2da719b3249d454e8b1906cf6c86f0b0"},
-        {"id": "87253d47-7fb0-45a2-8176-21b4a3a64970", "title": "Organic Chemistry: A Tenth Edition", "chroma_collection_name": "book_6cdacbc9dbfd413ab2e14e326a4f31d5"},
-        {"id": "c2a7c4f4-5f5b-4c28-98e3-0c4a45318bd5", "title": "World History, Volume 2: from 1400", "chroma_collection_name": "book_c2a7c4f45f5b4c2898e30c4a45318bd5"}
+        {"id": "37c415ed-9da7-48e9-8a9f-007ffd45e23e", "title": "U.S. History", "chroma_collection_name": "book_bb31b45a3e784efcb25293c6443561cd"},
+        {"id": "c2a7c4f4-5f5b-4c28-98e3-0c4a45318bd5", "title": "World History, Volume 2: from 1400", "chroma_collection_name": "book_c2a7c4f45f5b4c2898e30c4a45318bd5"},
+        {"id": "2a82814e-49a2-430c-9ce3-061e56b0f2aa", "title": "Introduction to Philosophy", "chroma_collection_name": "book_b8549d1250d44ebe93fde41969cd859b"},
+        {"id": "61bbf1c5-6a86-4e07-ace5-cabda44f9da3", "title": "Chemistry: Atoms First", "chroma_collection_name": "book_f6d49f37fb8d4a8da666dca97eb247fd"},
+        {"id": "11acbf5e-febf-4fb6-a1ee-5d94943fcf31", "title": "College Physics For AP® Courses 2e", "chroma_collection_name": "book_11acbf5efebf4fb6a1ee5d94943fcf31"}
     ]
 
 import time
