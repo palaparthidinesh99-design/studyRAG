@@ -102,8 +102,7 @@ def delete_source(subject_id: str, source_id: str, user_id: str = Depends(get_cu
     collection_name = subject.data[0].get("chroma_collection_name")
     if collection_name:
         try:
-            from backend.config import NOOP_EF
-            collection = chroma_client.get_collection(name=collection_name, embedding_function=NOOP_EF)
+            collection = chroma_client.get_collection(name=collection_name)
             collection.delete(where={"source_id": source_id})
         except Exception as e:
             print(f"Failed to delete vectors from Chroma DB: {e}")

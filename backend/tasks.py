@@ -73,8 +73,7 @@ def index_source_task(
 
             if chunks:
                 from backend.llm import call_gemini_embeddings
-                from backend.config import NOOP_EF
-                collection = chroma_client.get_or_create_collection(name=collection_name, embedding_function=NOOP_EF)
+                collection = chroma_client.get_or_create_collection(name=collection_name)
                 ids = [f"source_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
                 metadatas = [
                     {
@@ -245,8 +244,7 @@ def index_catalogue_book_task(global_book_id: str, pdf_url: str, title: str, col
         if chunks:
             try:
                 from backend.llm import call_gemini_embeddings
-                from backend.config import NOOP_EF
-                collection = chroma_client.get_or_create_collection(name=collection_name, embedding_function=NOOP_EF)
+                collection = chroma_client.get_or_create_collection(name=collection_name)
                 ids = [f"book_chunk_{uuid.uuid4().hex}" for _ in range(len(chunks))]
                 metadatas = [
                     {

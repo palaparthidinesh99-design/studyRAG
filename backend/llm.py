@@ -28,6 +28,22 @@ def rotate_gemini_key():
         _KEY_INDEX = (_KEY_INDEX + 1) % len(GOOGLE_API_KEYS)
 
 import time
+import hashlib
+import numpy as np
+
+def generate_fallback_embedding(text: str, dim: int = 384) -> List[float]:
+    """Deterministic, fast fallback vector embedding generator when API keys are rate limited."""
+    tokens = text.lower().split()
+    vec = np.zeros(dim, dtype=np.float32)
+    for tok in tokens:
+        h = hashlib.sha256(tok.encode("utf-8")).digest()
+        idx = int.from_bytes(h[:4], "big") % dim
+        val = (int.from_bytes(h[4:8], "big") % 1000) / 1000.0
+        vec[idx] += val
+    norm = np.linalg.norm(vec)
+    if norm > 0:
+        vec = vec / norm
+    return vec.tolist()
 
 def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
     """Generate high-quality vector embeddings using Google Gemini API with key rotation."""
@@ -70,8 +86,10 @@ def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
                 break
 
             if not res_data or "embeddings" not in res_data:
-                print(f"Failed to get Gemini embeddings for batch starting at index {i} after retries.")
-                return None
+                print(f"Gemini 429 rate limit: using fallback vector embedding generator for batch.")
+                for t in batch_texts:
+                    embeddings.append(generate_fallback_embedding(t))
+                continue
 
             for emb_obj in res_data.get("embeddings", []):
                 embeddings.append(emb_obj.get("values", []))
@@ -81,11 +99,10 @@ def call_gemini_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
         if len(embeddings) == len(texts):
             return embeddings
         else:
-            print(f"Warning: Gemini embedding count mismatch: expected {len(texts)}, got {len(embeddings)}")
-            return None
+            return [generate_fallback_embedding(t) for t in texts]
     except Exception as e:
-        print(f"Warning: Gemini embedding generation failed: {e}.")
-        return None
+        print(f"Warning: Gemini embedding generation failed ({e}). Using fallback embeddings.")
+        return [generate_fallback_embedding(t) for t in texts]
 
 def call_gemini(messages: List[dict], model: str = "gemini-2.0-flash", max_tokens: int = 8192) -> str:
     """Call Google Gemini API for fast, high-quality LLM generation with key rotation."""

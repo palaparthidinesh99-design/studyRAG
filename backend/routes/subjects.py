@@ -47,8 +47,7 @@ def create_subject(
         
         if chroma_client is not None:
             try:
-                from backend.config import NOOP_EF
-                background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name, embedding_function=NOOP_EF)
+                background_tasks.add_task(chroma_client.get_or_create_collection, name=collection_name)
             except Exception as chroma_err:
                 print(f"Chroma collection creation warning: {chroma_err}")
 
