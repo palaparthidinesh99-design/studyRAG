@@ -326,40 +326,34 @@ def retrieve_merged_context(subject_id: str, query_text: str, user_id: str, n_re
                 except Exception as e:
                     print(f"Collection query notice: {e}")
 
-    # If no relevant chunks were retrieved or if all retrieved chunks have weak relevance (distance > 0.70), query matching global books catalog
+    # If no relevant chunks were retrieved or if all retrieved chunks have weak relevance (distance > 0.70), query all global books in catalog
     if (not all_chunks or all(c.get("distance", 1.0) > 0.70 for c in all_chunks)) and source_filter in ["all", "books"]:
         try:
             gb_res = supabase.table("global_books").select("id, title, chroma_collection_name").execute()
             if gb_res.data:
                 fallback_cols = []
-                q_clean = re.sub(r'[^a-zA-Z0-9 ]', ' ', query_text).lower()
-                query_words = set(q_clean.split()) - {"what", "who", "when", "where", "why", "how", "is", "are", "the", "a", "an", "of", "in", "for", "to"}
                 already_queried = {c["name"] for c in collections_to_query}
 
                 for gb in gb_res.data:
                     c_name = gb["chroma_collection_name"]
                     if c_name in already_queried:
                         continue
-                    t_clean = re.sub(r'[^a-zA-Z0-9 ]', ' ', gb["title"]).lower()
-                    title_words = set(t_clean.split())
-
-                    # Match domain or title words (e.g., U.S. History, History, Physics, Chemistry, etc.)
-                    if (query_words & title_words) or ("history" in q_clean and "history" in t_clean) or ("physics" in q_clean and "physics" in t_clean) or ("chemistry" in q_clean and "chemistry" in t_clean):
-                        fallback_cols.append({
-                            "name": c_name,
-                            "type": "global_book",
-                            "source_name": gb["title"],
-                            "book_id": gb["id"],
-                            "specific_source_id": None
-                        })
+                    fallback_cols.append({
+                        "name": c_name,
+                        "type": "global_book",
+                        "source_name": gb["title"],
+                        "book_id": gb["id"],
+                        "specific_source_id": None
+                    })
 
                 if fallback_cols:
                     with ThreadPoolExecutor(max_workers=max(1, len(fallback_cols))) as executor:
-                        fb_futures = [executor.submit(query_single_collection, col_info) for col_info in fallback_cols[:4]]
+                        fb_futures = [executor.submit(query_single_collection, col_info) for col_info in fallback_cols]
                         for f in fb_futures:
                             try:
                                 fb_chunks = f.result(timeout=3.0)
-                                all_chunks.extend(fb_chunks)
+                                if fb_chunks:
+                                    all_chunks.extend(fb_chunks)
                             except Exception:
                                 pass
         except Exception as fb_err:
