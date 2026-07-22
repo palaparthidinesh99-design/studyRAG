@@ -380,7 +380,8 @@ def link_catalogue_book(
                 
         collection_exists = False
         try:
-            col = chroma_client.get_collection(name=collection_name)
+            from backend.config import NOOP_EF
+            col = chroma_client.get_collection(name=collection_name, embedding_function=NOOP_EF)
             if col.count() > 0:
                 collection_exists = True
         except Exception:

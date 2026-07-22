@@ -85,6 +85,7 @@ def rank_and_filter_resources(query_text: str, collections_list: list) -> list:
 _CHROMA_COLLECTIONS_CACHE = {}
 
 def get_cached_collection(name: str):
+    from backend.config import NOOP_EF
     if len(_CHROMA_COLLECTIONS_CACHE) > 20:
         _CHROMA_COLLECTIONS_CACHE.clear()
         import gc
@@ -92,10 +93,10 @@ def get_cached_collection(name: str):
         
     if name not in _CHROMA_COLLECTIONS_CACHE:
         try:
-            col = chroma_client.get_collection(name=name)
+            col = chroma_client.get_collection(name=name, embedding_function=NOOP_EF)
             _CHROMA_COLLECTIONS_CACHE[name] = col
         except Exception:
-            col = chroma_client.get_or_create_collection(name=name)
+            col = chroma_client.get_or_create_collection(name=name, embedding_function=NOOP_EF)
             _CHROMA_COLLECTIONS_CACHE[name] = col
     return _CHROMA_COLLECTIONS_CACHE[name]
 

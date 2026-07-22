@@ -55,6 +55,15 @@ else:
     except Exception as local_e:
         print(f"Error: Failed to initialize local Chroma client: {local_e}")
 
+class NoOpEmbeddingFunction(chromadb.EmbeddingFunction):
+    def __init__(self):
+        pass
+
+    def __call__(self, input: chromadb.Documents) -> chromadb.Embeddings:
+        return []
+
+NOOP_EF = NoOpEmbeddingFunction()
+
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "https://ollama.com/api")
 OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
