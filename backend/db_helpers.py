@@ -316,48 +316,18 @@ def retrieve_merged_context(subject_id: str, query_text: str, user_id: str, n_re
                         })
         except Exception as e:
             print(f"Error querying Chroma collection {col_info['name']}: {e}")
+        return chunks
+
     if collections_to_query:
         with ThreadPoolExecutor(max_workers=max(1, len(collections_to_query))) as executor:
             futures = [executor.submit(query_single_collection, col_info) for col_info in collections_to_query]
             for f in futures:
                 try:
-                    chunks = f.result(timeout=3.0)
-                    all_chunks.extend(chunks)
+                    res_chunks = f.result(timeout=3.0)
+                    if res_chunks and isinstance(res_chunks, list):
+                        all_chunks.extend(res_chunks)
                 except Exception as e:
                     print(f"Collection query notice: {e}")
-
-    # If no relevant chunks were retrieved or if all retrieved chunks have weak relevance (distance > 0.70), query all global books in catalog
-    if (not all_chunks or all(c.get("distance", 1.0) > 0.70 for c in all_chunks)) and source_filter in ["all", "books"]:
-        try:
-            gb_res = supabase.table("global_books").select("id, title, chroma_collection_name").execute()
-            if gb_res.data:
-                fallback_cols = []
-                already_queried = {c["name"] for c in collections_to_query}
-
-                for gb in gb_res.data:
-                    c_name = gb["chroma_collection_name"]
-                    if c_name in already_queried:
-                        continue
-                    fallback_cols.append({
-                        "name": c_name,
-                        "type": "global_book",
-                        "source_name": gb["title"],
-                        "book_id": gb["id"],
-                        "specific_source_id": None
-                    })
-
-                if fallback_cols:
-                    with ThreadPoolExecutor(max_workers=max(1, len(fallback_cols))) as executor:
-                        fb_futures = [executor.submit(query_single_collection, col_info) for col_info in fallback_cols]
-                        for f in fb_futures:
-                            try:
-                                fb_chunks = f.result(timeout=3.0)
-                                if fb_chunks:
-                                    all_chunks.extend(fb_chunks)
-                            except Exception:
-                                pass
-        except Exception as fb_err:
-            print(f"Global catalog search fallback notice: {fb_err}")
 
     all_chunks.sort(key=lambda x: x["distance"])
     return all_chunks[:n_results]

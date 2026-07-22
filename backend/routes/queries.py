@@ -242,7 +242,7 @@ def query_text(
         
     retrieved = retrieve_merged_context(subject_id, retrieval_text, user_id, n_results=3, source_filter=req.source_filter or "all")
     RELEVANCE_THRESHOLD = 3.5
-    retrieved = [c for c in retrieved if c.get("distance", 0.0) <= RELEVANCE_THRESHOLD][:3]
+    retrieved = [c for c in retrieved if c.get("distance", 0.0) <= RELEVANCE_THRESHOLD][:6]
     
     context_parts = []
     sections_used = []
