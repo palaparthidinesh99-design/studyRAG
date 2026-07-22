@@ -292,7 +292,7 @@ def query_text(
     if "explain in depth" in req.query.lower() or "explain in-depth" in req.query.lower():
         explain_depth_instruction = "- The student explicitly asked for in-depth explanation. Be thorough, include mechanism, worked examples, and edge cases.\n"
 
-    prompt = f"""Use the top retrieved study passages below to answer the student's question.
+    prompt = f"""Use the study passages below to answer the student's question.
 
 STUDY ENVIRONMENT DETAILS:
 {materials_info}
@@ -301,12 +301,13 @@ STUDY ENVIRONMENT DETAILS:
 
 INSTRUCTIONS:
 - The student's name is '{user_name}'. Address or mention the student by their name '{user_name}' naturally in a warm, friendly tutor tone (e.g. 'Good question, {user_name}!').
-- CRITICAL DECISION TASK: Read the top 3 passages above carefully. Compare them against the student's question '{req.query}'. DECIDE WHICH PASSAGE IS THE SINGLE BEST MATCH FOR THIS QUESTION.
-- Base your explanation directly on that winning passage.
-- Do NOT include raw citation labels like [Book, Section, p.X] inline in your explanation text.
-- At the VERY END of your response (on a new line), output the exact citation tag of the winning passage:
+- Always provide a clear, comprehensive, and accurate academic answer to the student's question '{req.query}'.
+- Explain all core principles, mathematical formulas, key mechanisms, and real-world examples in depth.
+- Do NOT output any disclaimers like 'no relevant material found' or 'answering from general knowledge'. Speak with confidence as an expert tutor.
+- Do NOT include raw citation labels like [Book, Section, p.X] inline inside your explanation body.
+- Whenever comparing concepts, listing properties, or detailing steps, organize the information using clean markdown tables.
+- At the VERY END of your response (on a new line), output the citation tag of the primary reference section:
   CITED_SOURCE: [Winning Source Title, Section Name, p.PageNumber]
-- Whenever comparing concepts, listing properties, or summarizing data, organize the information in clean markdown tables.
 {explain_depth_instruction}
 Student's Question: {req.query}
 """
