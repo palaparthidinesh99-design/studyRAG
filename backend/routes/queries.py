@@ -97,11 +97,24 @@ def parse_cited_source(answer: str, sections_used: list) -> tuple[str, list]:
                     active_sources.append(sec_copy)
                     break  # Pick the SINGLE best matching citation!
 
-    # Fallback if LLM tag omitted or didn't match: select the single top best matching section (lowest vector distance)
+    # Fallback 1 if sorted_sections matched: select the single top best matching section (lowest vector distance)
     if not active_sources and sorted_sections:
         best_sec = dict(sorted_sections[0])
         best_sec["source_name"] = clean_source_name(best_sec.get("source_name", ""))
         active_sources.append(best_sec)
+
+    # Fallback 2 if LLM provided a CITED_SOURCE label string directly: parse title and section from label
+    if not active_sources and cited_label:
+        label_clean = cited_label.strip("[]")
+        parts = [p.strip() for p in label_clean.split(",")]
+        b_title = clean_source_name(parts[0]) if parts else "Linked Study Material"
+        b_sec = parts[1] if len(parts) > 1 else ""
+        active_sources.append({
+            "source_type": "global_book",
+            "source_name": b_title,
+            "section": b_sec,
+            "page": ""
+        })
 
     # If active_sources contains a valid citation, remove any accidental disclaimer text and append citation footer
     if active_sources:
