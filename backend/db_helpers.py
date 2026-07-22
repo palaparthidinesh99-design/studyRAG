@@ -320,9 +320,14 @@ def retrieve_merged_context(subject_id: str, query_text: str, user_id: str, n_re
 
     if collections_to_query:
         with ThreadPoolExecutor(max_workers=max(1, len(collections_to_query))) as executor:
-            results_list = list(executor.map(query_single_collection, collections_to_query))
-        for chunks in results_list:
-            all_chunks.extend(chunks)
+            futures = [executor.submit(query_single_collection, col_info) for col_info in collections_to_query]
+            from concurrent.futures import TimeoutError as ExecTimeoutError
+            for f in futures:
+                try:
+                    chunks = f.result(timeout=3.0)
+                    all_chunks.extend(chunks)
+                except Exception as e:
+                    print(f"Collection query notice: {e}")
             
     all_chunks.sort(key=lambda x: x["distance"])
     return all_chunks[:n_results]
