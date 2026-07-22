@@ -6,7 +6,7 @@ BASE_URL = "https://studyrag-3s4g.onrender.com"
 
 def run_test():
     # 1. Register a fresh test user
-    email = f"student_{uuid.uuid4().hex[:6]}@example.com"
+    email = f"student_{uuid.uuid4().hex[:6]}@studyrag.edu"
     password = "testpassword123"
     
     print(f"Registering user: {email}")
