@@ -2,7 +2,7 @@ import os
 import random
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from backend.config import supabase
+from backend.config import supabase, supabase_admin
 from backend.models import RegisterRequest, LoginRequest, VerifyEmailRequest, ResendCodeRequest
 from backend.auth import get_current_user
 
@@ -39,7 +39,7 @@ def register(req: RegisterRequest):
 
     # Try admin user creation first for instant verified accounts bypassing signup rate limits
     try:
-        admin_res = supabase.auth.admin.create_user({
+        admin_res = supabase_admin.auth.admin.create_user({
             "email": req.email,
             "password": req.password,
             "email_confirm": True,
