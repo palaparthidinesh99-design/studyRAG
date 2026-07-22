@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>StudyRAG Mini</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 0 20px;
+      color: #1e293b;
+      background-color: #f8fafc;
+    }
+    h2 {
+      margin-bottom: 24px;
+      color: #0f172a;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 12px;
+    }
+    .form-group {
+      margin-bottom: 12px;
+    }
+    input {
+      padding: 10px 14px;
+      font-size: 15px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      outline: none;
+      box-sizing: border-box;
+    }
+    input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+    #auth input {
+      width: 100%;
+      margin-bottom: 12px;
+    }
+    .btn-row {
+      display: flex;
+      gap: 12px;
+    }
+    button {
+      padding: 10px 18px;
+      font-size: 15px;
+      font-weight: 600;
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+    }
+    button:hover {
+      background-color: #1d4ed8;
+    }
+    #ask-box {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    #question {
+      flex: 1;
+    }
+    #error {
+      color: #dc2626;
+      background-color: #fef2f2;
+      border: 1px solid #fecaca;
+      padding: 10px;
+      border-radius: 6px;
+      margin-top: 12px;
+      font-size: 14px;
+      display: none;
+    }
+    #result-box {
+      margin-top: 24px;
+      background: white;
+      border: 1px solid #e2e8f0;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    #answer {
+      white-space: pre-wrap;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+    .sources-title {
+      font-weight: bold;
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #e2e8f0;
+      color: #475569;
+      font-size: 14px;
+    }
+    .source-item {
+      font-size: 13px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h2>StudyRAG Mini</h2>
+
+  <div id="auth">
+    <div class="form-group">
+      <input id="email" type="email" placeholder="email@example.com">
+    </div>
+    <div class="form-group">
+      <input id="password" type="password" placeholder="password">
+    </div>
+    <div class="btn-row">
+      <button onclick="register()">Register</button>
+      <button onclick="login()">Login</button>
+    </div>
+    <div id="error"></div>
+  </div>
+
+  <div id="ask" style="display:none;">
+    <div id="ask-box">
+      <input id="question" placeholder="Ask a question about Introduction to Philosophy...">
+      <button onclick="ask()">Ask</button>
+    </div>
+    <div id="result-box" style="display:none;">
+      <div id="answer"></div>
+      <div id="sources-container"></div>
+    </div>
+  </div>
+
+<script>
+let token = null;
+
+function showError(msg) {
+  const errDiv = document.getElementById('error');
+  errDiv.innerText = msg;
+  errDiv.style.display = 'block';
+}
+
+function hideError() {
+  document.getElementById('error').style.display = 'none';
+}
+
+async function register() {
+  hideError();
+  const emailVal = document.getElementById('email').value.trim();
+  const passwordVal = document.getElementById('password').value;
+  if (!emailVal || !passwordVal) {
+    showError("Please enter email and password.");
+    return;
+  }
+  try {
+    const res = await fetch('/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailVal, password: passwordVal })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Registration failed");
+    token = data.access_token;
+    showAsk();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+async function login() {
+  hideError();
+  const emailVal = document.getElementById('email').value.trim();
+  const passwordVal = document.getElementById('password').value;
+  if (!emailVal || !passwordVal) {
+    showError("Please enter email and password.");
+    return;
+  }
+  try {
+    const res = await fetch('/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailVal, password: passwordVal })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Login failed");
+    token = data.access_token;
+    showAsk();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+function showAsk() {
+  document.getElementById('auth').style.display = 'none';
+  document.getElementById('ask').style.display = 'block';
+}
+
+async function ask() {
+  const qVal = document.getElementById('question').value.trim();
+  if (!qVal) return;
+  
+  const resultBox = document.getElementById('result-box');
+  const answerDiv = document.getElementById('answer');
+  const sourcesDiv = document.getElementById('sources-container');
+  
+  resultBox.style.display = 'block';
+  answerDiv.innerText = 'Thinking...';
+  sourcesDiv.innerHTML = '';
+
+  try {
+    const res = await fetch('/ask', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({ question: qVal })
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Failed to process question");
+
+    answerDiv.innerText = data.answer;
+    
+    if (data.sources && data.sources.length > 0) {
+      let html = '<div class="sources-title">Sources:</div>';
+      data.sources.forEach(s => {
+        html += `<div class="source-item">- ${s.section} (p.${s.page})</div>`;
+      });
+      sourcesDiv.innerHTML = html;
+    }
+  } catch (err) {
+    answerDiv.innerText = "Error: " + err.message;
+  }
+}
+</script>
+</body>
+</html>
