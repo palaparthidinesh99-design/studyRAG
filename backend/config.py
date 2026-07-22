@@ -22,9 +22,12 @@ SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", SUPABASE
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment")
 
+# Primary DB client uses service role key if available to bypass RLS policy checks
+db_key = SUPABASE_SERVICE_ROLE_KEY if SUPABASE_SERVICE_ROLE_KEY else SUPABASE_KEY
+
 supabase = create_client(
     SUPABASE_URL,
-    SUPABASE_KEY,
+    db_key,
     options=ClientOptions(
         storage_client_timeout=180,
         postgrest_client_timeout=120
